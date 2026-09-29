@@ -18,6 +18,7 @@ export const APP_EVENTS = Object.freeze({
   CALIBRATION_PROGRESS: "calibration:progress",
   CALIBRATION_COMPLETE: "calibration:complete",
   CALIBRATION_RESET: "calibration:reset",
+  REP: "rep",
 });
 
 export const INITIAL_STATE = APP_STATES.SPLASH;
@@ -48,6 +49,11 @@ export const CALIBRATION_UP_OFFSET = 12;
 export const CALIBRATION_UP_MIN = 155;
 export const CALIBRATION_UP_MAX = 165;
 export const CALIBRATION_START_OFFSET = 15;
+export const SQUAT_BOTTOM_THRESHOLD = 125;
+export const SQUAT_RISING_DELTA = 8;
+export const PHASE_CONFIRM_FRAMES = 3;
+export const MIN_REP_DURATION_MS = 500;
+export const MAX_REP_DURATION_MS = 10000;
 export const POSE_MODEL_PATH = new URL(
   "../vendor/mediapipe/models/pose_landmarker_lite.task",
   import.meta.url,

@@ -103,6 +103,17 @@ button { font: inherit; cursor: pointer; }
 .calibration-progress-fill { width: 0; height: 100%; border-radius: inherit; background: var(--accent); transition: width .08s linear; }
 .calibration-hud.is-complete .calibration-progress-fill { background: var(--success); }
 .calibration-hud.is-complete .calibration-progress-label { color: var(--success); }
+.squat-action { width: min(100%, 760px); margin-top: -8px; }
+.squat-start-button { width: 100%; justify-content: center; min-height: 58px; font-size: 13px; }
+.squat-start-button:disabled { cursor: not-allowed; opacity: .48; transform: none; box-shadow: none; }
+.squat-panel { width: min(100%, 760px); padding: clamp(18px, 3vw, 28px); border: 1px solid var(--border); background: var(--surface); }
+.squat-panel h2 { margin: 0 0 18px; color: var(--text); font-size: 25px; font-weight: 900; letter-spacing: .12em; }
+.squat-stats { display: grid; grid-template-columns: 1.35fr repeat(3, 1fr); gap: 10px; }
+.squat-stat { display: flex; flex-direction: column; justify-content: space-between; min-height: 112px; padding: 15px; border: 1px solid var(--border); background: var(--background); }
+.squat-stat-label { color: var(--muted); font-family: Consolas, "Courier New", monospace; font-size: 10px; font-weight: 700; letter-spacing: .12em; }
+.squat-stat-value { color: var(--text); font-size: clamp(19px, 2.5vw, 30px); line-height: 1; }
+.squat-reps .squat-stat-value { color: var(--success); font-size: clamp(58px, 6vw, 76px); }
+.squat-end-button { width: auto; margin: 16px 0 0; }
 .camera-status-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; width: min(100%, 760px); min-height: 56px; }
 .camera-status { margin: 0; color: var(--text); font-size: 16px; font-weight: 700; }
 .camera-status.is-error { color: var(--error); }
@@ -134,6 +145,8 @@ button { font: inherit; cursor: pointer; }
   .calibration-hud { flex-wrap: wrap; gap: 12px; }
   .calibration-progress { width: 100%; justify-content: space-between; }
   .calibration-progress-track { flex: 1; }
+  .squat-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .squat-stat { min-height: 92px; }
   .camera-status-row { flex-direction: column; gap: 8px; }
 }
 

@@ -5,6 +5,7 @@ import { initPose, startPoseLoop, stopPoseLoop, disposePose } from "./pose.js";
 import { clearPose, drawPose, sizePoseCanvas } from "./drawPose.js";
 import { assessPoseQuality } from "./poseQuality.js";
 import { createCalibration } from "./calibration.js";
+import { createExerciseEngine } from "./engine.js";
 
 const screens = {
   [APP_STATES.SPLASH]: document.querySelector("#splash-screen"),
@@ -16,7 +17,10 @@ let sessionId = 0;
 let bodyVisible = false;
 let lastView = "UNKNOWN";
 let lastCalibrationState = "WAITING";
+let lastQuality = null;
+let squatMode = false;
 const calibration = createCalibration();
+const engine = createExerciseEngine();
 
 const video = document.querySelector("#camera-video");
 const canvas = document.querySelector("#pose-canvas");
@@ -25,7 +29,7 @@ const status = document.querySelector("#camera-status");
 const help = document.querySelector("#camera-help");
 const fpsIndicator = document.querySelector("#fps-indicator");
 const cameraFrame = document.querySelector(".camera-frame");
-document.querySelector(".stage-label").textContent = "G2.2 / CALIBRATION";
+document.querySelector(".stage-label").textContent = "G2.3a / SQUAT TEST";
 
 // Keep the G2.1 markup intact; the calibration readout belongs to this screen.
 const calibrationHud = document.createElement("div");
@@ -51,6 +55,51 @@ progressTrack.append(progressFill);
 progressGroup.append(progressLabel, progressTrack);
 calibrationHud.append(viewIndicator, progressGroup);
 cameraFrame.after(calibrationHud);
+
+const squatAction = document.createElement("div");
+squatAction.className = "squat-action";
+squatAction.hidden = true;
+const startSquatButton = document.createElement("button");
+startSquatButton.className = "primary-button squat-start-button";
+startSquatButton.type = "button";
+startSquatButton.textContent = "START SQUAT TEST";
+startSquatButton.hidden = true;
+squatAction.append(startSquatButton);
+calibrationHud.after(squatAction);
+
+const squatPanel = document.createElement("section");
+squatPanel.className = "squat-panel";
+squatPanel.setAttribute("aria-label", "Squat repetition counter");
+squatPanel.hidden = true;
+const squatTitle = document.createElement("h2");
+squatTitle.textContent = "SQUAT";
+const squatStats = document.createElement("div");
+squatStats.className = "squat-stats";
+
+function makeSquatStat(label, initialValue, className = "") {
+  const item = document.createElement("div");
+  item.className = `squat-stat ${className}`.trim();
+  const name = document.createElement("span");
+  name.className = "squat-stat-label";
+  name.textContent = label;
+  const value = document.createElement("strong");
+  value.className = "squat-stat-value";
+  value.textContent = initialValue;
+  item.append(name, value);
+  squatStats.append(item);
+  return value;
+}
+
+const repValue = makeSquatStat("REPS", "0", "squat-reps");
+const phaseValue = makeSquatStat("PHASE", "UP");
+const angleValue = makeSquatStat("KNEE ANGLE", "—");
+const squatViewValue = makeSquatStat("VIEW", "UNKNOWN");
+const endSquatButton = document.createElement("button");
+endSquatButton.className = "secondary-button squat-end-button";
+endSquatButton.type = "button";
+endSquatButton.textContent = "← END SQUAT TEST";
+squatPanel.append(squatTitle, squatStats, endSquatButton);
+squatAction.after(squatPanel);
 
 const errorMessages = {
   CAMERA_DENIED: [
@@ -91,6 +140,14 @@ function showProgress(progress, complete = false) {
 
 function showPoseGuidance({ quality, calibrationState, progress, resetReason }) {
   showProgress(progress, calibrationState === "CALIBRATED");
+  startSquatButton.hidden = squatMode || calibrationState !== "CALIBRATED";
+  squatAction.hidden = startSquatButton.hidden;
+  startSquatButton.disabled = quality.framing !== "READY" || quality.view !== "SIDE";
+
+  if (squatMode && quality.framing === "READY" && quality.view !== "SIDE") {
+    showStatus("Turn sideways to the camera");
+    return;
+  }
 
   if (quality.framing === "NO_BODY") {
     showStatus("Stand in front of the camera");
@@ -99,7 +156,13 @@ function showPoseGuidance({ quality, calibrationState, progress, resetReason }) 
   } else if (quality.framing === "TOO_CLOSE") {
     showStatus("Move farther from the camera");
   } else if (calibrationState === "CALIBRATED") {
-    showStatus("Calibration complete");
+    if (squatMode) {
+      showStatus("Ready for squat");
+    } else {
+      showStatus("Calibration complete", quality.view === "SIDE"
+        ? "Ready for squat"
+        : "Turn sideways to the camera");
+    }
   } else if (calibrationState === "CALIBRATING") {
     showStatus("Calibrating... hold still");
   } else if (resetReason === "MOVING") {
@@ -123,7 +186,7 @@ function renderState(state) {
   }
 
   document.querySelector(".footer span:last-child").textContent =
-    state === APP_STATES.CAMERA ? "G2.2 / CALIBRATION" : "G2.2 / SPLASH";
+    state === APP_STATES.CAMERA ? "G2.3a / CAMERA" : "G2.3a / SPLASH";
 }
 
 function setState(nextState) {
@@ -143,10 +206,15 @@ on(APP_EVENTS.POSE_READY, () => showStatus("Stand in front of the camera"));
 on(APP_EVENTS.POSE_ERROR, showError);
 on(APP_EVENTS.POSE_VIEW, ({ view }) => {
   viewIndicator.textContent = `VIEW: ${view}`;
+  squatViewValue.textContent = view;
+});
+on(APP_EVENTS.REP, ({ rep }) => {
+  repValue.textContent = String(rep);
 });
 on(APP_EVENTS.POSE_QUALITY, showPoseGuidance);
 on(APP_EVENTS.POSE_RESULT, ({ landmarks, fps, timestampMs }) => {
   const quality = assessPoseQuality(landmarks, video.videoWidth, video.videoHeight);
+  lastQuality = quality;
   const calibrationStatus = calibration.update(
     landmarks,
     quality,
@@ -179,6 +247,20 @@ on(APP_EVENTS.POSE_RESULT, ({ landmarks, fps, timestampMs }) => {
     emit(APP_EVENTS.CALIBRATION_COMPLETE, calibrationStatus.calibration);
   }
   lastCalibrationState = calibrationStatus.state;
+  if (squatMode) {
+    const squat = engine.process(landmarks, {
+      calibration: calibration.getResult(),
+      videoWidth: video.videoWidth,
+      videoHeight: video.videoHeight,
+      nowMs: timestampMs,
+      view: quality.view,
+      framing: quality.framing,
+    });
+    phaseValue.textContent = squat.phase.toUpperCase();
+    angleValue.textContent = Number.isFinite(squat.metrics.kneeAngle)
+      ? `${Math.round(squat.metrics.kneeAngle)}°`
+      : "—";
+  }
   emit(APP_EVENTS.POSE_QUALITY, {
     quality,
     calibrationState: calibrationStatus.state,
@@ -189,13 +271,20 @@ on(APP_EVENTS.POSE_RESULT, ({ landmarks, fps, timestampMs }) => {
 
 async function enterCamera() {
   const thisSession = ++sessionId;
+  engine.reset();
+  squatMode = false;
+  squatPanel.hidden = true;
+  startSquatButton.hidden = true;
+  squatAction.hidden = true;
   setState(APP_STATES.CAMERA);
   emptyView.hidden = false;
   bodyVisible = false;
   calibration.reset();
   lastCalibrationState = "WAITING";
+  lastQuality = null;
   lastView = "UNKNOWN";
   viewIndicator.textContent = "VIEW: UNKNOWN";
+  squatViewValue.textContent = "UNKNOWN";
   showProgress(0);
   fpsIndicator.textContent = "FPS --";
   showStatus("Waiting for camera permission...");
@@ -232,6 +321,11 @@ async function enterCamera() {
 
 function leaveCamera() {
   sessionId += 1;
+  engine.reset();
+  squatMode = false;
+  squatPanel.hidden = true;
+  startSquatButton.hidden = true;
+  squatAction.hidden = true;
   stopPoseLoop();
   stopCamera();
   disposePose();
@@ -240,12 +334,47 @@ function leaveCamera() {
   bodyVisible = false;
   calibration.reset();
   lastCalibrationState = "WAITING";
+  lastQuality = null;
   lastView = "UNKNOWN";
   viewIndicator.textContent = "VIEW: UNKNOWN";
+  squatViewValue.textContent = "UNKNOWN";
   showProgress(0);
   fpsIndicator.textContent = "FPS --";
   setState(APP_STATES.SPLASH);
 }
+
+startSquatButton.addEventListener("click", () => {
+  if (squatMode || lastQuality?.framing !== "READY" || lastView !== "SIDE" ||
+      !engine.startSquat(calibration.getResult())) return;
+  squatMode = true;
+  startSquatButton.hidden = true;
+  squatAction.hidden = true;
+  squatPanel.hidden = false;
+  repValue.textContent = "0";
+  phaseValue.textContent = "UP";
+  angleValue.textContent = "—";
+  squatViewValue.textContent = lastView;
+  showStatus("Ready for squat");
+});
+endSquatButton.addEventListener("click", () => {
+  engine.reset();
+  squatMode = false;
+  squatPanel.hidden = true;
+  startSquatButton.hidden = !calibration.getResult();
+  squatAction.hidden = startSquatButton.hidden;
+  startSquatButton.disabled = lastQuality?.framing !== "READY" || lastView !== "SIDE";
+  if (calibration.getResult()) {
+    showStatus("Calibration complete", lastView === "SIDE"
+      ? "Ready for squat"
+      : "Turn sideways to the camera");
+    (startSquatButton.disabled
+      ? document.querySelector("#back-button")
+      : startSquatButton).focus();
+  } else {
+    showStatus("Hold still for calibration");
+    document.querySelector("#back-button").focus();
+  }
+});
 
 document.querySelector("#start-button").addEventListener("click", enterCamera);
 document.querySelector("#back-button").addEventListener("click", () => {

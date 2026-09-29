@@ -1,10 +1,10 @@
 # Motion Quest contracts
 
-This document defines the interfaces between modules. G2.2 adds smoothed landmarks, pose quality, view classification, and a neutral-stance calibration to the working camera pipeline. Exercise analyzers and the game engine remain planned.
+This document defines the interfaces between modules. G2.3a adds a calibrated squat repetition state machine and a minimal exercise engine. Form-error rules and game progression remain planned.
 
 ## Architecture and module boundaries
 
-The pipeline is `camera → MediaPipe raw landmarks → One Euro smoothing → pose quality and view → neutral calibration → UI`. Later analyzers will consume the smoothed landmarks and calibration context. MediaPipe supplies landmark positions; Motion Quest code owns movement analysis, phase detection, form rules, and feedback.
+The pipeline is `camera → MediaPipe raw landmarks → One Euro smoothing → pose quality and view → neutral calibration → squat analyzer → engine event → UI`. MediaPipe supplies landmark positions; Motion Quest code owns movement analysis and phase detection. Form rules and game feedback come later.
 
 | Module | Responsibility | Status |
 | --- | --- | --- |
@@ -19,8 +19,8 @@ The pipeline is `camera → MediaPipe raw landmarks → One Euro smoothing → p
 | `src/poseQuality.js` | Body visibility, framing, distance, and view codes | Implemented |
 | `src/calibration.js` | Stable 1.5-second neutral-stance sample window | Implemented |
 | `src/drawPose.js` | Transparent canvas skeleton aligned to the mirrored video; readiness colors | Implemented |
-| Future analyzer modules | Movement phases, repetition validation, and form errors | Planned |
-| Future engine | Convert analyzer output into events and application progress | Planned |
+| `src/exercises/squat.js` | Pixel-corrected knee angle, visibility-based side choice, confirmed phase transitions, repetition validation | Rep detection implemented; form errors planned |
+| `src/engine.js` | Own active analyzer, feed frames, publish counted `rep` events, reset exercise | Implemented |
 
 No module should send video frames off device. The UI receives state and engine events, rather than reading pose internals directly.
 
@@ -29,7 +29,7 @@ No module should send video frames off device. The UI receives state and engine 
 | State | Meaning | Entry |
 | --- | --- | --- |
 | `SPLASH` | Initial screen with project title, privacy line, and START | App load or Back |
-| `CAMERA` | Live webcam, pose tracking, framing guidance, calibration, or camera error | START |
+| `CAMERA` | Live webcam, pose tracking, framing guidance, calibration, squat test, or camera error | START |
 | `CALIBRATION` | Possible future separate calibration screen; G2.2 calibrates inside CAMERA | Planned |
 | `QUEST_SELECT` | Future motion-driven selection | Planned |
 | `ACTIVE` | Future movement session | Planned |
@@ -37,7 +37,7 @@ No module should send video frames off device. The UI receives state and engine 
 | `RESULTS` | Future session summary | Planned |
 | `ERROR` | Future recoverable or fatal issue screen | Planned |
 
-Transitions are owned by `src/main.js` (or a future state controller). In G2.2, only `SPLASH ↔ CAMERA` is available. A state change emits `app:state-changed` with `{ state }`. Returning to Splash stops the pose loop, closes the landmarker, stops every camera track, resets smoothing, and clears calibration.
+Transitions are owned by `src/main.js` (or a future state controller). `SPLASH ↔ CAMERA` remains the application state transition; squat mode is a submode inside CAMERA. A state change emits `app:state-changed` with `{ state }`. Ending squat mode resets its analyzer. Returning to Splash also stops the pose loop, closes the landmarker, stops every camera track, resets smoothing, and clears calibration.
 
 ## Pose quality and calibration contract
 
@@ -45,31 +45,38 @@ Transitions are owned by `src/main.js` (or a future state controller). In G2.2, 
 
 `createCalibration().update(landmarks, quality, nowMs, videoWidth, videoHeight)` returns `{ state, progress, resetReason?, calibration? }`. It samples a visible neutral stance for 1500 ms while shoulder and hip midpoint drift stays under configured limits. `state` is `WAITING`, `READY`, `CALIBRATING`, or `CALIBRATED`. A completed result is `{ theta0, sw0, torsoLen, legLen, timestamp, derived: { up, start } }`; lengths are in video pixels and `theta0` is in degrees. The `derived` values are future thresholds only; no repetition analysis runs in G2.2. Invalid framing or movement resets the in-memory calibration.
 
-## Analyzer output contract (planned)
+## Squat analyzer output contract
 
-Each future exercise analyzer will expose `analyze(landmarks, context)` and return one result per processed frame. `landmarks` will be a MediaPipe pose landmark array or `null`. `context` will include `videoWidth`, `videoHeight`, and monotonic `nowMs`; normalized x/y must be scaled to video dimensions before angle calculations.
+`createSquat(config)` exposes `id`, `view`, `analyze(landmarks, context)`, and `reset()`. `landmarks` are smoothed MediaPipe points or `null`. `context` includes `videoWidth`, `videoHeight`, monotonic `nowMs`, current `view`, `framing`, and the calibration result. The selected side has the better average shoulder/hip/knee/ankle visibility among usable sides. The knee angle uses pixel-corrected coordinates.
 
 ```js
 {
   visible: true,                 // false when required joints cannot be trusted
-  phase: "up",                  // exercise-specific phase name
+  phase: "up",                  // up | down | bottom | rising
   reps: 0,                      // total counted repetitions
-  cleanReps: 0,                 // counted repetitions without form failures
-  errors: [                     // live feedback for the current frame
-    { code: "EXAMPLE_CODE", severity: "minor", joints: [11, 13] }
-  ],
-  repEvent: null,               // or { clean, errors: [code], durationMs, counted }
-  metrics: {}                   // exercise-specific numeric diagnostics
+  cleanReps: 0,                 // same as reps until form rules exist
+  errors: [],                   // always empty in G2.3a
+  repEvent: null,               // or { counted, durationMs, minAngle }
+  metrics: {                    // available for debug, not all shown in UI
+    kneeAngle: null,
+    minKneeAngle: null,
+    selectedSide: "LEFT",
+    upThreshold: 160,
+    downStartThreshold: 145,
+    phase: "up",
+    phaseCandidate: null,
+    phaseConfirmFrames: 0
+  }
 }
 ```
 
-`repEvent` is non-null only when a repetition finishes or is rejected. `counted: false` marks a rejected cycle; counted repetitions increment `reps` exactly once. `errors` is for current visual feedback, while `repEvent.errors` summarizes that repetition. An analyzer must not award progress when `visible` is false.
+`repEvent` is non-null only when a complete phase cycle returns to UP. `counted: false` means the duration was outside 500–10000 ms; the total does not change. A bend that never reaches BOTTOM creates no `repEvent`. A repetition must pass UP → DOWN → BOTTOM → RISING → UP with three confirming frames per phase. A view change away from SIDE cancels the in-progress cycle. Missing landmarks freeze it briefly and cancel it after the configured tracking-loss period. The analyzer never increments while `visible` is false. `cleanReps` is provisionally equal to `reps` because G2.3a has no form-error classification.
 
 ## Engine events (planned)
 
 Events will be published through `src/events.js`. Event payloads are plain objects; subscribers must not mutate them.
 
-G2.2 uses `camera:ready`, `camera:error`, `pose:ready`, `pose:result`, `pose:error`, `pose:body-found`, `pose:body-lost`, `pose:quality`, `pose:view`, `calibration:start`, `calibration:progress`, `calibration:complete`, and `calibration:reset`. A `pose:result` payload is `{ landmarks, fps, timestampMs }`, where `landmarks` is the **smoothed** first detected pose or `null`. `pose:quality` carries the quality result and calibration state. `calibration:complete` carries the completed calibration object.
+G2.3a uses the existing camera, pose, and calibration events plus `rep`. A `pose:result` payload is `{ landmarks, fps, timestampMs }`, where `landmarks` is the **smoothed** first detected pose or `null`. `pose:quality` carries the quality result and calibration state. `calibration:complete` carries the completed calibration object. `rep` carries `{ exercise: "squat", rep, durationMs, minAngle }` only for counted repetitions.
 
 | Event | Planned payload | Purpose |
 | --- | --- | --- |
@@ -93,4 +100,4 @@ G2.2 uses `camera:ready`, `camera:error`, `pose:ready`, `pose:result`, `pose:err
 | `LOW_LIGHT` | Image quality is too poor for reliable tracking | Pause counting and show lighting guidance |
 | `MULTI_PERSON` | More than one person is in view | Pause counting and request one person in frame |
 
-G2.2 handles camera and model errors plus on-screen framing guidance. Movement-specific form errors remain planned.
+G2.3a handles camera and model errors plus framing and SIDE-view guidance. Movement-specific form errors remain planned.
