@@ -1,3 +1,8 @@
+/**
+ * MOTION CORE
+ * Changes to pose tracking require regression testing.
+ * See CORE_OWNERSHIP.md and CORE_TESTS.md.
+ */
 import {
   MEDIAPIPE_WASM_PATH,
   NUM_POSES,

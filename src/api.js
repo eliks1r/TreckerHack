@@ -1,5 +1,10 @@
-// In-memory adapter only. Replace these function bodies with authenticated
-// backend calls when the API is available; keep their async return shapes.
+/**
+ * BACKEND INTEGRATION BOUNDARY
+ * Backend work should normally stay in this module or a future backend/ app.
+ * Keep these public async function signatures and { ok, data } responses stable;
+ * coordinate contract changes with frontend and motion/core owners.
+ * This implementation is in-memory only and makes no network requests.
+ */
 const workoutHistory = [];
 let userProgress = null;
 

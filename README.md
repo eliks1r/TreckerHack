@@ -32,6 +32,10 @@ MediaPipe provides landmarks. Motion Quest owns all movement analysis. `src/exer
 
 See [CONTRACT.md](./CONTRACT.md) for states, analyzer outputs, events, and result shape. See [INTEGRATION.md](./INTEGRATION.md) for frontend and backend teammate guidance.
 
+## Collaboration
+
+Start with [CONTRIBUTING.md](./CONTRIBUTING.md) for branches and Pull Requests. [ARCHITECTURE.md](./ARCHITECTURE.md) shows layer boundaries; [CORE_OWNERSHIP.md](./CORE_OWNERSHIP.md) lists protected motion files and [CORE_TESTS.md](./CORE_TESTS.md) is their regression checklist. Role-specific guidance is in [FRONTEND_GUIDE.md](./FRONTEND_GUIDE.md) and [BACKEND_GUIDE.md](./BACKEND_GUIDE.md).
+
 ## Manual checks
 
 1. Press START, allow the camera, and stand still until calibration finishes. **CHOOSE YOUR WORKOUT** should appear; no analyzer should start automatically.

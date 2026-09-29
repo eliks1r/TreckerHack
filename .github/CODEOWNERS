@@ -1,0 +1,20 @@
+# Motion / recognition core
+/src/camera.js @eliks1r
+/src/pose.js @eliks1r
+/src/filter.js @eliks1r
+/src/poseQuality.js @eliks1r
+/src/calibration.js @eliks1r
+/src/geometry.js @eliks1r
+/src/exercises/ @eliks1r
+/src/engine.js @eliks1r
+/src/workout.js @eliks1r
+/src/programs.js @eliks1r
+/src/events.js @eliks1r
+/src/appState.js @eliks1r
+/CONTRACT.md @eliks1r
+/.github/CODEOWNERS @eliks1r
+
+# Add these when teammates share their GitHub usernames:
+# /index.html @frontendUsername
+# /styles.css @frontendUsername
+# /src/api.js @backendUsername

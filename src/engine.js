@@ -1,3 +1,8 @@
+/**
+ * MOTION CORE
+ * Changes to exercise recognition or state require regression testing.
+ * See CORE_OWNERSHIP.md and CORE_TESTS.md.
+ */
 import { APP_EVENTS, HINT_COOLDOWN_MS } from "./config.js";
 import { emit } from "./events.js";
 import { createSquat } from "./exercises/squat.js";
