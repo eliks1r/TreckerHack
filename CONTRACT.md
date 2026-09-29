@@ -11,7 +11,7 @@ The pipeline is `camera → MediaPipe raw landmarks → One Euro smoothing → p
 | `index.html`, `styles.css` | Accessible application shell and visual design | Implemented |
 | `src/config.js` | Shared state, event names, and camera/pose settings | Implemented |
 | `src/events.js` | In-process `on(name, handler)` and `emit(name, detail)`; `on` returns an unsubscribe function | Implemented |
-| `src/main.js` | Screen routing, status UI, and resource lifecycle | Splash and camera implemented |
+| `src/main.js` | Screen routing, workout UI, status guidance, and resource lifecycle | Implemented development flow |
 | `src/camera.js` | Browser permission, video stream, track cleanup, normalized camera errors | Implemented |
 | `src/pose.js` | MediaPipe initialization, GPU to CPU fallback, one inference per video frame | Implemented |
 | `src/filter.js` | Independent One Euro x/y filters per landmark; resets on tracking loss | Implemented |
@@ -20,6 +20,7 @@ The pipeline is `camera → MediaPipe raw landmarks → One Euro smoothing → p
 | `src/calibration.js` | Stable 1.5-second neutral-stance sample window | Implemented |
 | `src/drawPose.js` | Transparent canvas skeleton aligned to the mirrored video; readiness colors | Implemented |
 | `src/exercises/squat.js` | Pixel-corrected squat phases, repetition validation, and form classification | Implemented |
+| `src/exercises/armraise.js` | FRONT-view bilateral arm raise phases and repetition validation | Implemented; form errors planned |
 | `src/engine.js` | Own active analyzer, feed frames, publish `rep` and throttled `hint` events, reset exercise | Implemented |
 | `src/programs.js` | Program data and exercise display names; unavailable exercises remain explicit | Implemented |
 | `src/workout.js` | DOM-free workout session state and result transitions | Implemented |
@@ -43,11 +44,17 @@ Transitions are owned by `src/main.js` (or a future state controller). `SPLASH �
 
 ## Training program and workout contracts
 
-`PROGRAMS` is an array of data objects with `{ id, name, description, durationMinutes, mode, developmentAvailable, exercises }`. Each exercise has `{ id, targetReps, implemented }`. IDs are `squat`, `armraise`, `sidebend`, `pushup`, and `clap`. Only Full Body Beginner is selectable in development mode. Desk Mode and Strength are visible and disabled. Within Full Body Beginner only Squat is implemented; the following Arm Raise stage is a clearly marked placeholder.
+`PROGRAMS` is an array of data objects with `{ id, name, description, durationMinutes, mode, developmentAvailable, exercises }`. Each exercise has `{ id, targetReps, implemented }`. IDs are `squat`, `armraise`, `sidebend`, `pushup`, and `clap`. Full Body Beginner and Desk Mode are selectable in development mode. Strength is visible and disabled. Squat and Arm Raise have real analyzers; Side Bend, Clap, and Push-up remain placeholders.
 
-`createWorkout(program)` owns `{ programId, currentExerciseIndex, status, exerciseResults, startedAt, endedAt }`. Status is `IDLE`, `ACTIVE`, `REST`, or `COMPLETE`. `startWorkout()` enters ACTIVE only when the first exercise is implemented. `completeCurrentExercise({ reps, cleanReps })` accepts an implemented ACTIVE exercise only after its target is met, records one result, and enters REST or COMPLETE. `nextExercise()` advances only from REST. `finishWorkout()` ends a partial development session; `resetWorkout()` clears all session data. No method reads or writes the DOM. The engine uses an exercise factory registry containing only `squat` for now; unavailable exercise IDs cannot start an analyzer.
+`createWorkout(program)` owns `{ programId, currentExerciseIndex, status, exerciseResults, startedAt, endedAt }`. Status is `IDLE`, `ACTIVE`, `REST`, or `COMPLETE`. `startWorkout()` enters ACTIVE only when the first exercise is implemented. `completeCurrentExercise({ reps, cleanReps })` accepts an implemented ACTIVE exercise only after its target is met, records one result, and enters REST or COMPLETE. `nextExercise()` advances only from REST. `finishWorkout()` ends a partial development session; `resetWorkout()` clears all session data. No method reads or writes the DOM. The engine factory registry contains `squat` and `armraise`; unavailable exercise IDs cannot start an analyzer.
 
-The UI listens for a counted `rep` from the squat engine, displays `reps / targetReps`, and completes the stage as soon as the target is reached. It resets the analyzer before showing REST, so further camera frames cannot add reps. The REST timer is 20 seconds and the user may press NEXT EXERCISE. Results show actual completed exercises, completed count, elapsed time, and a development status. No unimplemented stage receives synthetic results.
+The UI listens for counted `rep` events from the active analyzer, displays `reps / targetReps`, and completes the stage as soon as the target is reached. It resets the analyzer before showing REST, so further camera frames cannot add reps. The REST timer is 20 seconds and the user may press NEXT EXERCISE. Results show actual completed exercises, completed count, elapsed time, and a development status. No unimplemented stage receives synthetic results.
+
+## Arm Raise analyzer output contract
+
+`createArmRaise(config)` exposes `{ id: "armraise", view: "FRONT", analyze(landmarks, context), reset() }`. It receives smoothed MediaPipe landmarks and uses both shoulders, elbows, and wrists. Shoulder width is measured in video pixels; wrist heights are `(shoulder.y - wrist.y) * videoHeight / shoulderWidthPx`. At TOP, both wrists must also move outward from their shoulders by at least 0.25 shoulder widths. Elbow angles use pixel-corrected geometry. The result contains `{ visible, phase, reps, cleanReps, errors, repEvent, metrics }`, with phases `down`, `rising`, `top`, and `lowering`. Metrics include `hL`, `hR`, `outwardL`, `outwardR`, `leftElbowAngle`, `rightElbowAngle`, `selectedView`, and phase diagnostics. `errors` is always empty and `cleanReps` provisionally equals `reps` until Arm Raise form rules exist.
+
+A counted rep requires DOWN → RISING → TOP → LOWERING → DOWN, three confirming frames per transition, both arms near shoulder height at TOP, and a 600–10000 ms duration. DOWN must be confirmed before arming. Holding TOP or returning from RISING before TOP creates no rep. A brief loss of FRONT view or visible arm landmarks pauses analysis; a loss of at least the configured tracking timeout cancels the incomplete cycle while preserving total reps.
 
 ## Pose quality and calibration contract
 
@@ -92,7 +99,7 @@ The UI listens for a counted `rep` from the squat engine, displays `reps / targe
 
 Events will be published through `src/events.js`. Event payloads are plain objects; subscribers must not mutate them.
 
-G2.3b uses the existing camera, pose, and calibration events plus `rep` and `hint`. A `pose:result` payload is `{ landmarks, fps, timestampMs }`, where `landmarks` is the **smoothed** first detected pose or `null`. `pose:quality` carries the quality result and calibration state. `calibration:complete` carries the completed calibration object. `rep` carries `{ exercise: "squat", rep, clean, errors, durationMs, minAngle }` only for counted repetitions. `hint` carries `{ code, severity, joints }` for a newly active form issue, throttled per code to once per 4000 ms. The UI selects one correction by positioning, critical, then minor priority and holds it for at least 1500 ms.
+The camera, pose, and calibration events remain in use. A `pose:result` payload is `{ landmarks, fps, timestampMs }`, where `landmarks` is the **smoothed** first detected pose or `null`. `pose:quality` carries the quality result and calibration state. `calibration:complete` carries the completed calibration object. `rep` carries `{ exercise, rep, clean, errors, durationMs, minAngle? }` only for counted repetitions; `exercise` is `squat` or `armraise`, and `minAngle` is specific to Squat. `hint` carries `{ code, severity, joints }` for a newly active Squat form issue, throttled per code to once per 4000 ms. The UI selects one correction by positioning, critical, then minor priority and holds it for at least 1500 ms.
 
 Training flow events are `program:selected { programId }`, `workout:start` with the initial session state, `exercise:start { programId, exerciseId, index, targetReps }`, `exercise:complete { programId, exerciseId, reps, targetReps }`, `workout:rest { programId, seconds, nextExerciseId }`, `workout:complete` with final session state, and `workout:reset { programId }`.
 

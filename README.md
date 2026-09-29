@@ -1,12 +1,12 @@
 # Motion Quest
 
-Motion Quest is a browser-based fitness game for the **Admit Hackathon Motion case**: the player's body becomes the controller. The eventual experience will use a camera to recognize movement, give form feedback, and turn a workout into a quest. The current development flow adds training programs, a Squat workout stage, rest, and a session summary.
+Motion Quest is a browser-based fitness game for the **Admit Hackathon Motion case**: the player's body becomes the controller. The eventual experience will use a camera to recognize movement, give form feedback, and turn a workout into a quest. The current development flow tracks Squat and Arm Raise within training programs, with rest and a session summary.
 
 The Splash and camera screens state the privacy model: **“Video stays on your device.”** Camera frames are processed in the browser; this app does not upload them. START asks for camera permission, and BACK stops all camera tracks.
 
 ## Architecture
 
-The pose flow is `camera → MediaPipe landmarks → our One Euro smoothing → pose quality and calibration → squat analyzer → rep/hint events → workout session → interface`. MediaPipe provides body landmarks. Our own code implements filtering, geometry, visibility checks, view detection, calibration, squat phases, repetition decisions, and form feedback. Program definitions are data in `src/programs.js`; `src/workout.js` owns session transitions without DOM access. See [CONTRACT.md](./CONTRACT.md) for module boundaries and data contracts.
+The pose flow is `camera → MediaPipe landmarks → our One Euro smoothing → pose quality and calibration → active exercise analyzer → rep/hint events → workout session → interface`. MediaPipe provides body landmarks. Our own code implements filtering, geometry, visibility checks, view detection, calibration, Squat and Arm Raise repetition decisions, and Squat form feedback. Program definitions are data in `src/programs.js`; `src/workout.js` owns session transitions without DOM access. See [CONTRACT.md](./CONTRACT.md) for module boundaries and data contracts.
 
 Current files:
 
@@ -22,6 +22,7 @@ Current files:
 | `src/calibration.js` | Stable neutral-standing calibration window |
 | `src/geometry.js` | Pixel-corrected distance and angle helpers |
 | `src/exercises/squat.js` | Squat state machine, repetition validation, and form checks |
+| `src/exercises/armraise.js` | FRONT-view Arm Raise state machine and repetition validation |
 | `src/engine.js` | Current exercise owner and `rep`/`hint` event publisher |
 | `src/programs.js` | Program definitions and exercise names |
 | `src/workout.js` | Workout session state and completed exercise results |
@@ -47,13 +48,19 @@ Camera permission requires `localhost` or HTTPS. Opening `index.html` directly a
 ## Test training flow
 
 1. Press START, allow the camera, and stand still until calibration completes. **CHOOSE YOUR TRAINING** should appear.
-2. Check the three cards. **Full Body Beginner** is available as a development workout; **Desk Mode** and **Strength** say COMING SOON and cannot be entered.
+2. Check the three cards. **Full Body Beginner** and **Desk Mode** are available as development workouts; **Strength** says COMING SOON and cannot be entered.
 3. Select Full Body Beginner. Check **EXERCISE 1 / 3**, **SQUAT**, and **REPS 0 / 8**. Turn SIDE if prompted.
 4. Perform eight counted squats. The counter must reach exactly **8 / 8** and move automatically to REST without a ninth rep.
-5. Check the 20-second countdown and **NEXT: ARM RAISE**. Press NEXT EXERCISE; Arm Raise should show an explicit coming-soon placeholder with no detector or rep counter.
-6. Press FINISH DEMO WORKOUT. The summary should list Squat 8 / 8, exercises completed 1 / 3, elapsed time, and Development workout. RETURN TO PROGRAMS should reset the session.
-7. Select Full Body Beginner again. The Squat counter must restart at 0 / 8. RETURN TO PROGRAMS from the workout or rest view should also reset safely.
-8. Press BACK TO HOME. The camera indicator should turn off. START should launch a fresh calibration. Check the browser console for uncaught errors.
+5. Check the 20-second countdown and **NEXT: ARM RAISE**. Press NEXT EXERCISE; the live Arm Raise stage should show **EXERCISE 2 / 3**, **REPS 0 / 8**, **PHASE DOWN**, and **VIEW FRONT** after facing the camera.
+6. Perform eight complete bilateral arm raises. The counter should reach exactly **8 / 8** and enter REST with **NEXT: SIDE BEND**. Press NEXT EXERCISE; Side Bend must show a coming-soon placeholder without a rep detector.
+7. Press FINISH DEMO WORKOUT. The summary should list Squat and Arm Raise as completed, exercises completed 2 / 3, elapsed time, and Development workout. RETURN TO PROGRAMS should reset the session.
+8. Select Full Body Beginner again. The Squat counter must restart at 0 / 8. RETURN TO PROGRAMS from the workout or rest view should also reset safely.
+9. Select Desk Mode. Arm Raise should be the first tracked exercise at 0 / 8. After its target, Clap remains a coming-soon placeholder.
+10. Press BACK TO HOME. The camera indicator should turn off. START should launch a fresh calibration. Check the browser console for uncaught errors.
+
+## Arm Raise checks
+
+Face the camera and raise both arms sideways from down to shoulder height, then lower fully. Five complete cycles should add five reps. Holding the top, returning before shoulder height, small shoulder movements, and one-frame pose spikes should not add reps. Turn SIDE during an incomplete rep and check that the screen says **Face the camera**; return FRONT and perform a fresh cycle. RETURN TO PROGRAMS and restart the workout to confirm the counter begins at zero.
 
 ## Squat regression checks
 
@@ -83,4 +90,4 @@ Camera permission requires `localhost` or HTTPS. Opening `index.html` directly a
 | G5 | Wider exercise coverage, recovery paths, and accessibility polish |
 | G6 | Testing, performance work, documentation, and release readiness |
 
-Squat is the only implemented exercise analyzer. Arm Raise, Side Bend, Clap, and Push-up appear in program data but never generate fake repetitions. The current development workout stops at an Arm Raise placeholder. The app does not award XP or run a quest. G2.3b form checks use 2D camera geometry and initial thresholds, so camera angle, foot landmark visibility, and user proportions can affect feedback. Calibration and workout results stay in memory for the current camera session only.
+Squat and Arm Raise are the implemented exercise analyzers. Side Bend, Clap, and Push-up appear in program data but never generate fake repetitions. Arm Raise counts motion cycles but does not classify form errors yet. The app does not award XP or run a quest. G2.3b Squat form checks use 2D camera geometry and initial thresholds, so camera angle, foot landmark visibility, and user proportions can affect feedback. Calibration and workout results stay in memory for the current camera session only.

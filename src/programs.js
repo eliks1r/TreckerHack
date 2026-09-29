@@ -16,7 +16,7 @@ export const PROGRAMS = Object.freeze([
     developmentAvailable: true,
     exercises: [
       { id: "squat", targetReps: 8, implemented: true },
-      { id: "armraise", targetReps: 8, implemented: false },
+      { id: "armraise", targetReps: 8, implemented: true },
       { id: "sidebend", targetReps: 10, implemented: false },
     ],
   },
@@ -26,9 +26,9 @@ export const PROGRAMS = Object.freeze([
     description: "Short upper-body movement break.",
     durationMinutes: 3,
     mode: "upper_body",
-    developmentAvailable: false,
+    developmentAvailable: true,
     exercises: [
-      { id: "armraise", targetReps: 8, implemented: false },
+      { id: "armraise", targetReps: 8, implemented: true },
       { id: "clap", targetReps: 8, implemented: false },
       { id: "sidebend", targetReps: 10, implemented: false },
     ],
@@ -43,7 +43,7 @@ export const PROGRAMS = Object.freeze([
     exercises: [
       { id: "squat", targetReps: 10, implemented: true },
       { id: "pushup", targetReps: 5, implemented: false },
-      { id: "armraise", targetReps: 10, implemented: false },
+      { id: "armraise", targetReps: 10, implemented: true },
     ],
   },
 ].map((program) => Object.freeze({

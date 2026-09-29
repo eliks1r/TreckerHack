@@ -1,8 +1,9 @@
 import { APP_EVENTS, HINT_COOLDOWN_MS } from "./config.js";
 import { emit } from "./events.js";
 import { createSquat } from "./exercises/squat.js";
+import { createArmRaise } from "./exercises/armraise.js";
 
-const exerciseFactories = Object.freeze({ squat: createSquat });
+const exerciseFactories = Object.freeze({ squat: createSquat, armraise: createArmRaise });
 
 export function createExerciseEngine() {
   let analyzer = null;
@@ -23,6 +24,9 @@ export function createExerciseEngine() {
 
   return {
     startExercise,
+    getRequiredView() {
+      return analyzer?.view ?? null;
+    },
     startSquat(calibration) {
       return startExercise("squat", calibration);
     },
