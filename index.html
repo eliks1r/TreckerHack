@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0B0E17" />
+    <meta name="description" content="Motion Quest — your body is the controller." />
+    <title>Motion Quest</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script type="module" src="./src/main.js"></script>
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar" aria-label="Application header">
+        <a class="brand" href="./index.html" aria-label="Motion Quest home">
+          <span class="brand-mark" aria-hidden="true">M<span class="brand-spark">✦</span></span>
+          <span>MOTION QUEST</span>
+        </a>
+        <span class="stage-label">G1 / FOUNDATION</span>
+      </header>
+
+      <section id="splash-screen" class="screen splash-screen" aria-labelledby="splash-title">
+        <div class="splash-copy">
+          <p class="eyebrow"><span class="status-dot" aria-hidden="true"></span> MOVE TO PLAY</p>
+          <h1 id="splash-title">MOTION<br /><span>QUEST</span></h1>
+          <p class="tagline">Your body is the controller.</p>
+          <button id="start-button" class="primary-button" type="button">
+            <span>START</span>
+            <span class="button-arrow" aria-hidden="true">↗</span>
+          </button>
+          <p class="privacy-note"><span aria-hidden="true">◈</span> Video stays on your device.</p>
+        </div>
+
+        <div class="splash-art" aria-hidden="true">
+          <div class="art-grid"></div>
+          <div class="orbit orbit-outer"></div>
+          <div class="orbit orbit-middle"></div>
+          <div class="orbit orbit-inner"></div>
+          <div class="art-core"><span>MQ</span></div>
+          <span class="art-node node-one"></span>
+          <span class="art-node node-two"></span>
+          <span class="art-node node-three"></span>
+          <span class="art-caption caption-top">BODY INPUT <span>●</span> READY</span>
+          <span class="art-caption caption-bottom">PLAY IN MOTION / 001</span>
+        </div>
+      </section>
+
+      <section id="camera-screen" class="screen camera-screen" aria-labelledby="camera-title" hidden>
+        <div class="camera-heading">
+          <p class="eyebrow"><span class="status-dot" aria-hidden="true"></span> NEXT STAGE</p>
+          <h1 id="camera-title">CAMERA</h1>
+          <p class="camera-intro">Your adventure starts here.</p>
+        </div>
+        <div class="camera-frame" role="img" aria-label="Camera placeholder, camera is not active yet">
+          <div class="frame-corner top-left"></div>
+          <div class="frame-corner top-right"></div>
+          <div class="frame-corner bottom-left"></div>
+          <div class="frame-corner bottom-right"></div>
+          <div class="camera-symbol" aria-hidden="true">◎</div>
+          <p>CAMERA PREVIEW</p>
+          <span>COMING IN A LATER GATE</span>
+        </div>
+        <button id="back-button" class="secondary-button" type="button">← BACK TO SPLASH</button>
+      </section>
+
+      <footer class="footer">
+        <span>YOUR MOVEMENT. YOUR GAME.</span>
+        <span>G1 / SPLASH</span>
+      </footer>
+    </main>
+  </body>
+</html>
