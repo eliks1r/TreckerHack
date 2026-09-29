@@ -129,7 +129,7 @@ button { font: inherit; cursor: pointer; }
 .flow-view { width: min(100%, 960px); padding: clamp(24px, 4vw, 48px); border: 1px solid var(--border); background: var(--surface); }
 .flow-view h2 { margin: 0 0 18px; font-size: clamp(36px, 5vw, 68px); font-weight: 900; line-height: 1; letter-spacing: -.055em; }
 .flow-view .eyebrow { margin-bottom: 20px; }
-.flow-intro, .unavailable-view > p:not(.eyebrow) { max-width: 640px; color: var(--muted); font-size: 16px; line-height: 1.5; }
+.flow-intro { max-width: 640px; color: var(--muted); font-size: 16px; line-height: 1.5; }
 .program-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 30px; }
 .program-card { display: flex; flex-direction: column; align-items: flex-start; min-height: 300px; padding: 24px; border: 1px solid var(--border); background: var(--background); color: var(--text); text-align: left; }
 .program-card.is-available { border-color: var(--accent); box-shadow: inset 0 3px var(--accent); }
@@ -142,8 +142,9 @@ button { font: inherit; cursor: pointer; }
 .program-badge, .flow-kicker { color: var(--muted); font: 700 11px Consolas, "Courier New", monospace; letter-spacing: .13em; text-transform: uppercase; }
 .program-card.is-available .program-badge { color: var(--success); }
 .program-card.is-available .program-meta { color: var(--accent); }
+.program-action { margin-top: 14px; color: var(--success); font: 800 12px Consolas, "Courier New", monospace; letter-spacing: .1em; }
 .workout-heading { display: flex; justify-content: space-between; gap: 16px; width: min(100%, 760px); }
-.rest-view, .unavailable-view, .results-view { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
+.rest-view, .intro-view, .exercise-ready-view, .results-view { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
 .rest-view h2 { color: var(--accent); }
 .rest-completed, .rest-next, .results-program { margin: 0 0 10px; font-size: clamp(22px, 3vw, 34px); font-weight: 800; }
 .rest-next { color: var(--success); }

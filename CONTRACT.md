@@ -1,135 +1,116 @@
 # Motion Quest contracts
 
-This document defines the interfaces between modules. The training flow runs Squat, Arm Raise, and Side Bend through program selection, session state, rest, and results. Game progression remains planned.
+This is the application boundary contract. [INTEGRATION.md](./INTEGRATION.md) explains how teammates can use it.
 
 ## Architecture and module boundaries
 
-The pipeline is `camera → MediaPipe raw landmarks → One Euro smoothing → pose quality and view → neutral calibration → active exercise analyzer → engine event → UI`. MediaPipe supplies landmark positions; Motion Quest code owns movement analysis, phase detection, form checks, and corrective feedback.
+`camera → MediaPipe raw landmarks → One Euro smoothing → pose quality and calibration → exercise analyzer → workout controller → app state/events → UI`
 
-| Module | Responsibility | Status |
+Workout results follow a separate path: `workout controller → result serializer → api.js → future backend`.
+
+| Layer | Modules | Owns | Must not own |
+| --- | --- | --- | --- |
+| Pose | `camera.js`, `pose.js`, `filter.js`, `poseQuality.js`, `calibration.js`, `geometry.js` | Camera lifecycle, landmarks, smoothing, visibility, view, calibration | Workout screens, accounts, APIs |
+| Exercise | `exercises/squat.js`, `armraise.js`, `sidebend.js`, `pushup.js`, `engine.js` | Recognition, phases, repetition/form results, `rep` and `hint` events | DOM, network, storage, program progression |
+| Workout | `programs.js`, `workout.js` | Program data, explicit session transitions, serializable result | Camera frames, MediaPipe, DOM |
+| App/UI | `appState.js`, `events.js`, `main.js`, `index.html`, `styles.css`, `drawPose.js` | Screens, buttons, feedback, event subscriptions | Recognition thresholds inside UI |
+| API | `api.js` | Async persistence boundary | Pose data, exercise recognition, DOM |
+
+Dependencies flow from the UI into the workout and exercise layers. The analyzer modules do not import `api.js`, access `localStorage`, manipulate DOM, or know about accounts. No video frames or landmarks enter workout result objects.
+
+## Programs
+
+`PROGRAMS` contains exactly three numbered workouts, each with `{ workoutNumber, id, name, shortName, description, durationMinutes, exercises }`. Each exercise is `{ id, targetReps }`.
+
+| Number | ID | Exercises |
 | --- | --- | --- |
-| `index.html`, `styles.css` | Accessible application shell and visual design | Implemented |
-| `src/config.js` | Shared state, event names, and camera/pose settings | Implemented |
-| `src/events.js` | In-process `on(name, handler)` and `emit(name, detail)`; `on` returns an unsubscribe function | Implemented |
-| `src/main.js` | Screen routing, workout UI, status guidance, and resource lifecycle | Implemented development flow |
-| `src/camera.js` | Browser permission, video stream, track cleanup, normalized camera errors | Implemented |
-| `src/pose.js` | MediaPipe initialization, GPU to CPU fallback, one inference per video frame | Implemented |
-| `src/filter.js` | Independent One Euro x/y filters per landmark; resets on tracking loss | Implemented |
-| `src/geometry.js` | Small pixel-corrected distance and angle helpers | Implemented |
-| `src/poseQuality.js` | Body visibility, framing, distance, and view codes | Implemented |
-| `src/calibration.js` | Stable 1.5-second neutral-stance sample window | Implemented |
-| `src/drawPose.js` | Transparent canvas skeleton aligned to the mirrored video; readiness colors | Implemented |
-| `src/exercises/squat.js` | Pixel-corrected squat phases, repetition validation, and form classification | Implemented |
-| `src/exercises/armraise.js` | FRONT-view bilateral arm raise phases and repetition validation | Implemented; form errors planned |
-| `src/exercises/sidebend.js` | FRONT-view lateral torso angle and left/right repetition validation | Implemented; form errors planned |
-| `src/engine.js` | Own active analyzer, feed frames, publish `rep` and throttled `hint` events, reset exercise | Implemented |
-| `src/programs.js` | Program data and exercise display names; unavailable exercises remain explicit | Implemented |
-| `src/workout.js` | DOM-free workout session state and result transitions | Implemented |
+| 1 | `full-body` | Squat 8, Arm Raise 8, Side Bend 10 |
+| 2 | `strength` | Squat 10, Push-up 5, Arm Raise 10 |
+| 3 | `light` | Arm Raise 8, Side Bend 10, Arm Raise 8 |
 
-No module should send video frames off device. The UI receives state and engine events, rather than reading pose internals directly.
+Exercise IDs are `squat`, `armraise`, `sidebend`, and `pushup`. `EXERCISE_VIEWS` supplies positioning text for the UI. The active analyzer's `view` remains the recognition requirement.
 
-## Application states
+## Application and workout states
 
-| State | Meaning | Entry |
-| --- | --- | --- |
-| `SPLASH` | Initial screen with project title, privacy line, and START | App load or Back |
-| `CAMERA` | Live webcam, pose tracking, framing guidance, calibration, squat test, or camera error | START |
-| `CALIBRATION` | Possible future separate calibration screen; G2.2 calibrates inside CAMERA | Planned |
-| `QUEST_SELECT` | Future motion-driven selection | Planned |
-| `ACTIVE` | Future movement session | Planned |
-| `PAUSED` | Future interruption or user pause | Planned |
-| `RESULTS` | Future session summary | Planned |
-| `ERROR` | Future recoverable or fatal issue screen | Planned |
+The outer application state is `SPLASH` or `CAMERA`. Inside CAMERA, `appState.screen` is `CALIBRATION`, `PROGRAMS`, `INTRO`, `EXERCISE_READY`, `WORKOUT`, `REST`, or `RESULTS`. Camera and pose resources stay active between these views and stop on return to SPLASH.
 
-Transitions are owned by `src/main.js` (or a future state controller). `SPLASH ↔ CAMERA` remains the application state transition. Within CAMERA, the UI has calibration, programs, workout, rest, unavailable exercise, and results views; switching among them keeps the camera and pose loop running. A state change emits `app:state-changed` with `{ state }`. Returning to Splash stops the pose loop, closes the landmarker, stops every camera track, resets smoothing, session, and calibration.
+`createWorkout(program)` owns `{ workoutNumber, programId, currentExerciseIndex, status, exerciseResults, startedAt, finishedAt }`. Valid statuses and transitions are:
 
-## Training program and workout contracts
+```text
+IDLE → PROGRAM_SELECTED → READY → EXERCISE_READY → ACTIVE
+                                               ↑            ↓
+                                               └── REST ←───┘
+ACTIVE → COMPLETE  (after the final exercise)
+```
 
-`PROGRAMS` is an array of data objects with `{ id, name, description, durationMinutes, mode, developmentAvailable, exercises }`. Each exercise has `{ id, targetReps, implemented }`. IDs are `squat`, `armraise`, `sidebend`, `pushup`, and `clap`. Full Body Beginner is fully available. Desk Mode is selectable in development mode because Clap remains unavailable. Strength is visible and disabled because Push-up is unavailable. Squat, Arm Raise, and Side Bend have real analyzers.
+`selectProgram()` enters `PROGRAM_SELECTED`; `readyWorkout()` enters `READY` and displays the intro. START TRAINING calls `startWorkout()` and enters `EXERCISE_READY`. START EXERCISE calls `startExercise()` and enters `ACTIVE`; only then does `main.js` feed pose frames to the analyzer. `completeCurrentExercise()` records the target and enters REST or COMPLETE. PREPARE NEXT EXERCISE calls `readyNextExercise()` and enters `EXERCISE_READY`; it does not start recognition. Returning to workouts or repeating calls `resetWorkout()` and clears analyzer state. Repeat selects the same program and returns to its intro.
 
-`createWorkout(program)` owns `{ programId, currentExerciseIndex, status, exerciseResults, startedAt, endedAt }`. Status is `IDLE`, `ACTIVE`, `REST`, or `COMPLETE`. `startWorkout()` enters ACTIVE only when the first exercise is implemented. `completeCurrentExercise({ reps, cleanReps })` accepts an implemented ACTIVE exercise only after its target is met, records one result, and enters REST or COMPLETE. `nextExercise()` advances only from REST. `finishWorkout()` ends a partial development session; `resetWorkout()` clears all session data. No method reads or writes the DOM. The engine factory registry contains `squat`, `armraise`, and `sidebend`; unavailable exercise IDs cannot start an analyzer.
+The REST timer is a 20-second display; it does not activate an analyzer. Every exercise instance, including the second Arm Raise in Workout 3, starts with a fresh analyzer.
 
-The UI listens for counted `rep` events from the active analyzer, displays `reps / targetReps`, and completes the stage as soon as the target is reached. It resets the analyzer before showing REST, so further camera frames cannot add reps. The REST timer is 20 seconds and the user may press NEXT EXERCISE. Full Body Beginner completes after 8 Squats, 8 Arm Raises, and 10 Side Bends and shows all three results with elapsed time. A partial Desk Mode session keeps a development status. No unimplemented stage receives synthetic results.
+## Exercise analyzer output
 
-## Side Bend analyzer output contract
-
-`createSideBend(config)` exposes `{ id: "sidebend", view: "FRONT", analyze(landmarks, context), reset() }`. It receives smoothed shoulder and hip landmarks. Shoulder and hip midpoints use normalized coordinates; their displacement is converted to video pixels before calculating `torsoAngleDeg = atan2((shoulderMid.x - hipMid.x) * videoWidth, (hipMid.y - shoulderMid.y) * videoHeight) * 180 / PI`. Zero is upright, positive is a bend toward the mirrored display's left, and negative toward its right. The result contains `{ visible, phase, reps, cleanReps, errors: [], repEvent, metrics }`. Phases are `neutral`, `bending_left`, `left`, `returning_left`, `bending_right`, `right`, and `returning_right`. Metrics include signed `torsoAngleDeg`, `direction`, and phase confirmation diagnostics.
-
-An initial neutral position under 8° must be confirmed before arming. A full repetition passes 12° to start, reaches at least 20° on the same side, then returns below 8°; each phase transition requires three frames. A counted cycle lasts 600–10000 ms. Holding a bend, returning halfway, or a shallow movement does not count. Lost FRONT view or required joints pauses analysis and cancels an incomplete cycle after the tracking timeout while retaining completed reps. `cleanReps` provisionally equals `reps` until Side Bend form rules exist.
-
-## Arm Raise analyzer output contract
-
-`createArmRaise(config)` exposes `{ id: "armraise", view: "FRONT", analyze(landmarks, context), reset() }`. It receives smoothed MediaPipe landmarks and uses both shoulders, elbows, and wrists. Shoulder width is measured in video pixels; wrist heights are `(shoulder.y - wrist.y) * videoHeight / shoulderWidthPx`. At TOP, both wrists must also move outward from their shoulders by at least 0.25 shoulder widths. Elbow angles use pixel-corrected geometry. The result contains `{ visible, phase, reps, cleanReps, errors, repEvent, metrics }`, with phases `down`, `rising`, `top`, and `lowering`. Metrics include `hL`, `hR`, `outwardL`, `outwardR`, `leftElbowAngle`, `rightElbowAngle`, `selectedView`, and phase diagnostics. `errors` is always empty and `cleanReps` provisionally equals `reps` until Arm Raise form rules exist.
-
-A counted rep requires DOWN → RISING → TOP → LOWERING → DOWN, three confirming frames per transition, both arms near shoulder height at TOP, and a 600–10000 ms duration. DOWN must be confirmed before arming. Holding TOP or returning from RISING before TOP creates no rep. A brief loss of FRONT view or visible arm landmarks pauses analysis; a loss of at least the configured tracking timeout cancels the incomplete cycle while preserving total reps.
-
-## Pose quality and calibration contract
-
-`assessPoseQuality(landmarks, videoWidth, videoHeight)` receives **smoothed** normalized landmarks and returns `{ bodyDetected, fullBodyVisible, upperBodyVisible, missingJoints, framing, view, metrics }`. `framing` is one of `NO_BODY`, `PARTIAL_BODY`, `TOO_CLOSE`, or `READY`; `view` is `FRONT`, `SIDE`, or `UNKNOWN`. `metrics` includes normalized body height and pixel-corrected shoulder width, torso length, and their ratio. Framing takes priority over calibration, but the view label does not block calibration by itself.
-
-`createCalibration().update(landmarks, quality, nowMs, videoWidth, videoHeight)` returns `{ state, progress, resetReason?, calibration? }`. It samples a visible neutral stance for 1500 ms while shoulder and hip midpoint drift stays under configured limits. `state` is `WAITING`, `READY`, `CALIBRATING`, or `CALIBRATED`. A completed result is `{ theta0, sw0, torsoLen, legLen, timestamp, derived: { up, start } }`; lengths are in video pixels and `theta0` is in degrees. Invalid framing or movement resets progress during calibration. Once complete, `src/main.js` keeps that calibration for the current camera session while pose quality continues to gate exercise analysis.
-
-## Squat analyzer output contract
-
-`createSquat(config)` exposes `id`, `view`, `analyze(landmarks, context)`, and `reset()`. `landmarks` are smoothed MediaPipe points or `null`. `context` includes `videoWidth`, `videoHeight`, monotonic `nowMs`, current `view`, `framing`, and the calibration result. The selected side has the better average shoulder/hip/knee/ankle visibility among usable sides. The knee angle uses pixel-corrected coordinates.
+Each factory returns `{ id, view, analyze(landmarks, context), reset() }`. The engine feeds **smoothed** landmarks and context with `videoWidth`, `videoHeight`, monotonic `nowMs`, current view/framing, and calibration. Results have:
 
 ```js
 {
-  visible: true,                 // false when required joints cannot be trusted
-  phase: "up",                  // up | down | bottom | rising
-  reps: 0,                      // total counted repetitions
-  cleanReps: 0,                 // counted reps without critical form errors
-  errors: [],                   // live or just-completed { code, severity, joints }
-  repEvent: null,               // or { counted, clean, errors, durationMs, minAngle }
-  metrics: {                    // available for debug, not all shown in UI
-    kneeAngle: null,
-    minKneeAngle: null,
-    kneeOver: null,
-    lean: null,
-    maxKneeOver: null,
-    maxLean: null,
-    selectedSide: "LEFT",
-    upThreshold: 160,
-    downStartThreshold: 145,
-    phase: "up",
-    phaseCandidate: null,
-    phaseConfirmFrames: 0
-  }
+  visible: true,
+  phase: "up",
+  reps: 1,
+  cleanReps: 1,
+  errors: [],                    // { code, severity, joints } when implemented
+  repEvent: null,               // or { counted, clean, errors, durationMs, minAngle? }
+  metrics: {}                   // exercise-specific, no landmarks or DOM nodes
 }
 ```
 
-`repEvent` is non-null only when a complete phase cycle returns to UP. `counted: false` means the duration was outside 500–10000 ms; the total does not change. A bend that never reaches BOTTOM creates no `repEvent`. A repetition must pass UP → DOWN → BOTTOM → RISING → UP with three confirming frames per phase. A view change away from SIDE cancels the in-progress cycle. Missing landmarks freeze it briefly and cancel it after the configured tracking-loss period. The analyzer never increments while `visible` is false. A counted rep is clean when no critical error is assigned; minor warnings do not lower `cleanReps`.
+Squat and Push-up require SIDE view; Arm Raise and Side Bend require FRONT view. Squat uses a pixel-corrected knee angle and currently classifies `SQ_KNEE_TOE`, `SQ_LEAN`, `SQ_SHALLOW`, `SQ_NOT_UP`, and `SQ_FAST`. Arm Raise uses normalized bilateral wrist height; Side Bend uses pixel-corrected torso lateral angle; Push-up uses a pixel-corrected elbow angle. The latter three return empty `errors` until form checks are implemented. All four use confirmed phase transitions and reject incomplete cycles. Push-up validates its own side-profile joints so standing framing cannot block a horizontal body.
 
-`SQ_KNEE_TOE` uses the selected side's knee, ankle, and foot index (toe proxy). Forward is the ankle-to-toe horizontal direction; knee displacement beyond the toe is divided by calibrated leg length in pixels. Three consecutive near-bottom samples above 0.06 produce a minor warning; above 0.12 produce a critical error. `SQ_LEAN` is the shoulder-to-hip angle from vertical, critical above 55° for three near-bottom samples. A completed rep with minimum knee angle in (100°, 125°] gets critical `SQ_SHALLOW`. Duration below 900 ms gets minor `SQ_FAST`. Holding 145°–160° for over 1500 ms while rising gets minor `SQ_NOT_UP`. Form measurements are kept across the rep, while `errors` describes the current or just-completed issue.
+## Result contract
 
-## Engine events (planned)
+`buildWorkoutResult(workout.getState())` returns JSON with no MediaPipe objects:
 
-Events will be published through `src/events.js`. Event payloads are plain objects; subscribers must not mutate them.
+```json
+{
+  "id": "uuid-or-local-id",
+  "workoutNumber": 2,
+  "programId": "strength",
+  "startedAt": "2026-09-30T10:00:00.000Z",
+  "finishedAt": "2026-09-30T10:04:21.000Z",
+  "durationMs": 261000,
+  "exercises": [
+    {
+      "exerciseId": "squat",
+      "targetReps": 10,
+      "completedReps": 10,
+      "cleanReps": 8,
+      "durationMs": 45000,
+      "errors": [{ "rep": 3, "code": "SQ_SHALLOW", "severity": "critical" }]
+    }
+  ],
+  "completed": true
+}
+```
 
-The camera, pose, and calibration events remain in use. A `pose:result` payload is `{ landmarks, fps, timestampMs }`, where `landmarks` is the **smoothed** first detected pose or `null`. `pose:quality` carries the quality result and calibration state. `calibration:complete` carries the completed calibration object. `rep` carries `{ exercise, rep, clean, errors, durationMs, minAngle? }` only for counted repetitions; `exercise` is `squat` or `armraise`, and `minAngle` is specific to Squat. `hint` carries `{ code, severity, joints }` for a newly active Squat form issue, throttled per code to once per 4000 ms. The UI selects one correction by positioning, critical, then minor priority and holds it for at least 1500 ms.
+Timestamps are ISO 8601 strings; durations are integer milliseconds. Repeated exercise IDs remain separate array entries in program order. `api.js` currently stores results only in memory. A failed future save must not block RESULTS.
 
-Training flow events are `program:selected { programId }`, `workout:start` with the initial session state, `exercise:start { programId, exerciseId, index, targetReps }`, `exercise:complete { programId, exerciseId, reps, targetReps }`, `workout:rest { programId, seconds, nextExerciseId }`, `workout:complete` with final session state, and `workout:reset { programId }`.
+## App state and event contract
 
-| Event | Planned payload | Purpose |
-| --- | --- | --- |
-| `pose:visibility-changed` | `{ visible, reason }` | Show framing guidance or pause analysis |
-| `exercise:phase-changed` | `{ exerciseId, phase }` | Update phase cues |
-| `exercise:rep-completed` | `{ exerciseId, clean, errors, durationMs }` | Update counts and progress |
-| `exercise:rep-rejected` | `{ exerciseId, errors, durationMs }` | Explain an uncounted cycle |
-| `exercise:form-error` | `{ exerciseId, code, severity, joints }` | Show a specific correction |
-| `app:error` | `{ code, message, recoverable }` | Show a clear recovery path |
+`getAppState()` returns a cloned snapshot with `{ screen, cameraStatus, calibration, selectedProgram, workout, currentExercise, currentExerciseResult }`. `subscribeAppState(handler)` immediately gives a snapshot and returns an unsubscribe function. `app:state-change` also publishes each snapshot. `app:screen-change` publishes `{ screen, previousScreen }`. UI consumers may use `on(name, handler)` from `events.js`; they should not read analyzer closure state.
 
-## Error states (planned)
+| Event | Payload |
+| --- | --- |
+| `program:selected` | Workout session in `PROGRAM_SELECTED` |
+| `workout:ready`, `workout:start` | Workout session snapshot |
+| `exercise:ready`, `exercise:start` | `{ programId, exerciseId, index, targetReps, view? }` |
+| `rep` | `{ exercise, rep, clean, errors, durationMs, minAngle? }` |
+| `exercise:complete` | `{ programId, exerciseId, reps, targetReps, result }` |
+| `workout:rest` | `{ programId, seconds, nextExerciseId }` |
+| `workout:complete` | Serialized workout result |
+| `workout:reset` | `{ programId }` |
+| `camera:error`, `calibration:complete` | Normalized camera error; completed calibration object |
 
-| Code | Meaning | Expected UI action |
-| --- | --- | --- |
-| `CAMERA_DENIED` | Camera permission was declined | Explain how to allow access and retry |
-| `NO_CAMERA` | No camera was found | Explain device issue and retry |
-| `CAMERA_ERROR` | Camera could not start for another reason | Explain device issue and retry |
-| `INSECURE_CONTEXT` | Camera API unavailable in current context | Ask user to use localhost or HTTPS |
-| `MODEL_FAILED` | Pose model could not initialize or inference stopped | Offer retry |
-| `LOW_VISIBILITY` | Required body joints are outside the frame or obscured | Pause counting and show positioning guidance |
-| `LOW_LIGHT` | Image quality is too poor for reliable tracking | Pause counting and show lighting guidance |
-| `MULTI_PERSON` | More than one person is in view | Pause counting and request one person in frame |
+Existing `camera:*`, `pose:*`, `calibration:*`, and `hint` events remain in place. Pose landmarks stay in the pose event stream and never enter `appState` or API results.
 
-G2.3b handles camera and model errors, framing and SIDE-view guidance, and the five squat form codes above.
+## Error states
+
+Camera errors are `CAMERA_DENIED`, `NO_CAMERA`, and `CAMERA_ERROR`; pose initialization errors include `MODEL_FAILED`. Pose quality returns `NO_BODY`, `PARTIAL_BODY`, `TOO_CLOSE`, or `READY`, plus `FRONT`, `SIDE`, or `UNKNOWN` view. Exercise analysis pauses on invalid view or required joint loss and clears incomplete cycles after the tracking timeout. UI positioning guidance has priority over exercise form hints.

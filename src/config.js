@@ -5,6 +5,8 @@ export const APP_STATES = Object.freeze({
 
 export const APP_EVENTS = Object.freeze({
   STATE_CHANGED: "app:state-changed",
+  APP_SCREEN_CHANGE: "app:screen-change",
+  APP_STATE_CHANGE: "app:state-change",
   CAMERA_READY: "camera:ready",
   CAMERA_ERROR: "camera:error",
   POSE_READY: "pose:ready",
@@ -21,7 +23,9 @@ export const APP_EVENTS = Object.freeze({
   REP: "rep",
   HINT: "hint",
   PROGRAM_SELECTED: "program:selected",
+  WORKOUT_READY: "workout:ready",
   WORKOUT_START: "workout:start",
+  EXERCISE_READY: "exercise:ready",
   EXERCISE_START: "exercise:start",
   EXERCISE_COMPLETE: "exercise:complete",
   WORKOUT_REST: "workout:rest",
@@ -85,6 +89,13 @@ export const SIDEBEND_START_DEG = 12;
 export const SIDEBEND_FULL_DEG = 20;
 export const SIDEBEND_MIN_REP_MS = 600;
 export const SIDEBEND_MAX_REP_MS = 10000;
+export const PUSHUP_UP_DEG = 155;
+export const PUSHUP_DESCEND_DEG = 145;
+export const PUSHUP_BOTTOM_DEG = 95;
+export const PUSHUP_RISING_DELTA = 10;
+export const PUSHUP_MIN_REP_MS = 700;
+export const PUSHUP_MAX_REP_MS = 12000;
+export const PUSHUP_PROFILE_MAX_TILT_DEG = 45;
 export const PHASE_CONFIRM_FRAMES = 3;
 export const MIN_REP_DURATION_MS = 500;
 export const MAX_REP_DURATION_MS = 10000;

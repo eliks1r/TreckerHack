@@ -6,8 +6,10 @@ import { clearPose, drawPose, sizePoseCanvas } from "./drawPose.js";
 import { assessPoseQuality } from "./poseQuality.js";
 import { createCalibration } from "./calibration.js";
 import { createExerciseEngine } from "./engine.js";
-import { EXERCISE_NAMES, PROGRAMS } from "./programs.js";
-import { createWorkout } from "./workout.js";
+import { EXERCISE_NAMES, EXERCISE_VIEWS, PROGRAMS } from "./programs.js";
+import { buildWorkoutResult, createWorkout, WORKOUT_STATUSES } from "./workout.js";
+import { resetAppState, setAppState } from "./appState.js";
+import { saveWorkoutResult } from "./api.js";
 
 const screens = {
   [APP_STATES.SPLASH]: document.querySelector("#splash-screen"),
@@ -24,6 +26,7 @@ let flowView = "CALIBRATION";
 let sessionCalibration = null;
 let selectedProgram = null;
 let workout = null;
+let currentExerciseErrors = [];
 let restTimerHandle = null;
 let cleanStreak = 0;
 let feedback = null;
@@ -42,11 +45,15 @@ const cameraFrame = document.querySelector(".camera-frame");
 const cameraHeading = document.querySelector(".camera-heading");
 const cameraStatusRow = document.querySelector(".camera-status-row");
 const programsView = document.querySelector("#programs-view");
+const introView = document.querySelector("#intro-view");
+const exerciseReadyView = document.querySelector("#exercise-ready-view");
 const workoutHeading = document.querySelector("#workout-heading");
 const restView = document.querySelector("#rest-view");
-const unavailableView = document.querySelector("#unavailable-view");
 const resultsView = document.querySelector("#results-view");
-document.querySelector(".stage-label").textContent = "TRAINING / DEVELOPMENT";
+document.querySelector(".stage-label").textContent = "TRAINING / PROGRAMS";
+document.querySelector("#programs-view .flow-intro").textContent =
+  "Choose a workout to review its exercises before starting.";
+const repeatButton = document.querySelector("#repeat-workout-button");
 
 // Keep the G2.1 markup intact; the calibration readout belongs to this screen.
 const calibrationHud = document.createElement("div");
@@ -195,15 +202,17 @@ function renderFormFeedback(errors, quality, nowMs, repEvent) {
 function showFlow(next) {
   flowView = next;
   cameraHeading.hidden = next !== "CALIBRATION";
-  cameraFrame.hidden = next !== "CALIBRATION" && next !== "WORKOUT";
-  calibrationHud.hidden = next !== "CALIBRATION" && next !== "WORKOUT";
-  cameraStatusRow.hidden = next !== "CALIBRATION" && next !== "WORKOUT";
+  cameraFrame.hidden = next !== "CALIBRATION" && next !== "WORKOUT" && next !== "EXERCISE_READY";
+  calibrationHud.hidden = next !== "CALIBRATION" && next !== "WORKOUT" && next !== "EXERCISE_READY";
+  cameraStatusRow.hidden = next !== "CALIBRATION" && next !== "WORKOUT" && next !== "EXERCISE_READY";
   squatPanel.hidden = next !== "WORKOUT";
-  workoutHeading.hidden = next !== "WORKOUT";
+  workoutHeading.hidden = next !== "WORKOUT" && next !== "EXERCISE_READY";
   programsView.hidden = next !== "PROGRAMS";
+  introView.hidden = next !== "INTRO";
+  exerciseReadyView.hidden = next !== "EXERCISE_READY";
   restView.hidden = next !== "REST";
-  unavailableView.hidden = next !== "UNAVAILABLE";
   resultsView.hidden = next !== "RESULTS";
+  setAppState({ screen: next, workout: workout?.getState() ?? null });
 }
 
 function renderProgramCards() {
@@ -212,25 +221,25 @@ function renderProgramCards() {
   for (const program of PROGRAMS) {
     const card = document.createElement("button");
     card.type = "button";
-    card.className = `program-card ${program.developmentAvailable ? "is-available" : ""}`;
-    card.disabled = !program.developmentAvailable;
+    card.className = "program-card is-available";
     const badge = document.createElement("span");
     badge.className = "program-badge";
-    badge.textContent = program.exercises.every((item) => item.implemented)
-      ? "AVAILABLE" : program.developmentAvailable ? "AVAILABLE • DEVELOPMENT" : "COMING SOON";
+    badge.textContent = `WORKOUT ${program.workoutNumber} · AVAILABLE`;
     const title = document.createElement("h3");
-    title.textContent = program.name.toUpperCase();
+    title.textContent = program.shortName.toUpperCase();
     const exercises = document.createElement("p");
     exercises.className = "program-exercises";
-    exercises.textContent = program.exercises.map((item) =>
-      `${EXERCISE_NAMES[item.id]}${item.implemented ? "" : " (coming soon)"}`).join(" · ");
+    exercises.textContent = program.exercises.map((item) => EXERCISE_NAMES[item.id]).join(" · ");
     const description = document.createElement("p");
     description.textContent = program.description;
     const meta = document.createElement("span");
     meta.className = "program-meta";
     meta.textContent = `~${program.durationMinutes} MIN · ${program.exercises.length} EXERCISES`;
-    card.append(badge, title, exercises, description, meta);
-    if (program.developmentAvailable) card.addEventListener("click", () => startProgram(program));
+    const action = document.createElement("span");
+    action.className = "program-action";
+    action.textContent = `START WORKOUT ${program.workoutNumber}`;
+    card.append(badge, title, exercises, description, meta, action);
+    card.addEventListener("click", () => selectProgram(program));
     cards.append(card);
   }
 }
@@ -243,11 +252,8 @@ function clearRestTimer() {
 function showResults() {
   const state = workout?.getState();
   if (!state || !selectedProgram) return;
-  const complete = state.exerciseResults.length === selectedProgram.exercises.length;
-  document.querySelector("#results-title").textContent = complete
-    ? "WORKOUT COMPLETE" : "WORKOUT SUMMARY";
-  document.querySelector(".results-stats p:last-child strong").textContent = complete
-    ? "Completed" : "Development workout";
+  document.querySelector("#results-title").textContent = "WORKOUT COMPLETE";
+  document.querySelector(".results-stats p:last-child strong").textContent = "Completed";
   document.querySelector("#results-program").textContent = selectedProgram.name;
   const list = document.querySelector("#results-exercises");
   list.replaceChildren();
@@ -257,80 +263,152 @@ function showResults() {
     const name = document.createElement("span");
     name.textContent = EXERCISE_NAMES[item.exerciseId];
     const count = document.createElement("strong");
-    count.textContent = `${item.reps} / ${item.targetReps} completed`;
+    count.textContent = `${item.completedReps} / ${item.targetReps}`;
     row.append(name, count);
     list.append(row);
   }
   document.querySelector("#results-count").textContent =
     `${state.exerciseResults.length} / ${selectedProgram.exercises.length}`;
-  const seconds = Math.max(0, Math.floor(((state.endedAt ?? Date.now()) - state.startedAt) / 1000));
+  const seconds = Math.max(0, Math.floor((state.finishedAt - state.startedAt) / 1000));
   document.querySelector("#results-duration").textContent =
     `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
   showFlow("RESULTS");
 }
 
 function finishWorkout() {
-  if (!workout) return;
+  if (workout?.getState().status !== WORKOUT_STATUSES.COMPLETE) return;
   clearRestTimer();
   engine.reset();
   activeExercise = null;
-  const result = workout.finishWorkout();
+  const result = buildWorkoutResult(workout.getState());
+  setAppState({ currentExercise: null, currentExerciseResult: null,
+    workout: workout.getState() });
   emit(APP_EVENTS.WORKOUT_COMPLETE, result);
   showResults();
+  // Persistence is deliberately outside the motion engine and never blocks Results.
+  Promise.resolve().then(() => saveWorkoutResult(result)).catch(() => {
+    // The mock is local; a future backend may fail or be offline.
+  });
 }
 
-function beginExercise(exercise) {
-  if (!exercise) return;
-  emit(APP_EVENTS.EXERCISE_START, {
-    programId: selectedProgram.id, exerciseId: exercise.id,
-    index: workout.getState().currentExerciseIndex, targetReps: exercise.targetReps,
-  });
-  if (!exercise.implemented) {
-    document.querySelector("#unavailable-title").textContent = EXERCISE_NAMES[exercise.id].toUpperCase();
-    showFlow("UNAVAILABLE");
-    return;
-  }
-  if (!engine.startExercise(exercise.id, sessionCalibration)) {
-    document.querySelector("#unavailable-title").textContent = EXERCISE_NAMES[exercise.id].toUpperCase();
-    showFlow("UNAVAILABLE");
+function activateExercise(exercise) {
+  if (workout?.getState().status !== WORKOUT_STATUSES.EXERCISE_READY ||
+      !engine.startExercise(exercise.id, sessionCalibration)) return;
+  if (!workout.startExercise()) {
+    engine.reset();
     return;
   }
   activeExercise = exercise.id;
+  currentExerciseErrors = [];
   resetFormFeedback();
+  squatViewValue.textContent = lastView;
+  viewIndicator.textContent = `VIEW: ${lastView}`;
   const isSquat = exercise.id === "squat";
   const isSideBend = exercise.id === "sidebend";
+  const isPushup = exercise.id === "pushup";
   squatTitle.textContent = EXERCISE_NAMES[exercise.id].toUpperCase();
   formPanel.hidden = !isSquat;
   cleanValue.parentElement.hidden = !isSquat;
   squatStats.classList.toggle("is-armraise", !isSquat);
-  angleLabel.textContent = isSquat ? "KNEE ANGLE" : isSideBend ? "ANGLE" : "ARM HEIGHT";
+  angleLabel.textContent = isSquat ? "KNEE ANGLE" : isPushup ? "ELBOW ANGLE"
+    : isSideBend ? "ANGLE" : "ARM HEIGHT";
   repValue.textContent = `0 / ${exercise.targetReps}`;
-  phaseValue.textContent = isSquat ? "UP" : isSideBend ? "NEUTRAL" : "DOWN";
+  phaseValue.textContent = isSquat || isPushup ? "UP"
+    : isSideBend ? "NEUTRAL" : "DOWN";
   angleValue.textContent = isSideBend ? "0°" : "—";
   document.querySelector("#workout-program-name").textContent = selectedProgram.name.toUpperCase();
   document.querySelector("#workout-exercise-number").textContent =
     `EXERCISE ${workout.getState().currentExerciseIndex + 1} / ${selectedProgram.exercises.length}`;
   showFlow("WORKOUT");
+  setAppState({ currentExercise: { ...exercise, view: EXERCISE_VIEWS[exercise.id] },
+    currentExerciseResult: null, workout: workout.getState() });
+  emit(APP_EVENTS.EXERCISE_START, {
+    programId: selectedProgram.id, workoutNumber: selectedProgram.workoutNumber,
+    exerciseId: exercise.id, index: workout.getState().currentExerciseIndex,
+    targetReps: exercise.targetReps,
+  });
   showStatus(lastView === engine.getRequiredView()
     ? `Ready for ${EXERCISE_NAMES[exercise.id]}`
-    : isSquat ? "Turn sideways to the camera" : "Face the camera");
+    : engine.getRequiredView() === "SIDE" ? "Turn sideways to the camera" : "Face the camera");
 }
 
-function startProgram(program) {
-  if (!program.developmentAvailable || !sessionCalibration || workout) return;
+function showIntro() {
+  document.querySelector("#intro-number").textContent =
+    `WORKOUT ${selectedProgram.workoutNumber}`;
+  document.querySelector("#intro-title").textContent = selectedProgram.shortName.toUpperCase();
+  document.querySelector("#intro-count").textContent =
+    `${selectedProgram.exercises.length} EXERCISES`;
+  document.querySelector("#intro-duration").textContent =
+    `Estimated time: ~${selectedProgram.durationMinutes} min`;
+  const list = document.querySelector("#intro-exercises");
+  list.replaceChildren();
+  for (const exercise of selectedProgram.exercises) {
+    const row = document.createElement("div");
+    row.className = "result-row";
+    const name = document.createElement("span");
+    name.textContent = EXERCISE_NAMES[exercise.id];
+    const target = document.createElement("strong");
+    target.textContent = `${exercise.targetReps} reps`;
+    row.append(name, target);
+    list.append(row);
+  }
+  showFlow("INTRO");
+}
+
+function showExerciseReady(exercise) {
+  if (!exercise || workout?.getState().status !== WORKOUT_STATUSES.EXERCISE_READY) return;
+  activeExercise = null;
+  engine.reset();
+  const index = workout.getState().currentExerciseIndex;
+  document.querySelector("#workout-program-name").textContent = selectedProgram.name.toUpperCase();
+  document.querySelector("#workout-exercise-number").textContent =
+    `EXERCISE ${index + 1} / ${selectedProgram.exercises.length}`;
+  document.querySelector("#exercise-ready-step").textContent =
+    index === 0 ? "FIRST EXERCISE" : "NEXT EXERCISE";
+  document.querySelector("#exercise-ready-title").textContent =
+    EXERCISE_NAMES[exercise.id].toUpperCase();
+  document.querySelector("#exercise-ready-reps").textContent =
+    `${exercise.targetReps} REPS`;
+  document.querySelector("#exercise-ready-position").textContent =
+    `POSITION: ${EXERCISE_VIEWS[exercise.id]} VIEW`;
+  document.querySelector("#exercise-ready-help").textContent = exercise.id === "pushup"
+    ? "Place the camera so your full side profile is visible. Keep shoulder, elbow, wrist, hip, and ankle in frame."
+    : EXERCISE_VIEWS[exercise.id] === "SIDE"
+      ? "Turn sideways and keep your full body in frame."
+      : "Face the camera and keep your arms and torso in frame.";
+  showFlow("EXERCISE_READY");
+  showStatus(`Prepare for ${EXERCISE_NAMES[exercise.id]}`);
+  setAppState({ currentExercise: { ...exercise, view: EXERCISE_VIEWS[exercise.id] },
+    currentExerciseResult: null });
+  emit(APP_EVENTS.EXERCISE_READY, {
+    programId: selectedProgram.id, exerciseId: exercise.id, index,
+    targetReps: exercise.targetReps, view: EXERCISE_VIEWS[exercise.id],
+  });
+}
+
+function selectProgram(program) {
+  if (!sessionCalibration || workout) return;
   const session = createWorkout(program);
-  if (!session.startWorkout()) return;
+  if (!session.selectProgram()) return;
   selectedProgram = program;
   workout = session;
-  emit(APP_EVENTS.PROGRAM_SELECTED, { programId: program.id });
-  emit(APP_EVENTS.WORKOUT_START, session.getState());
-  beginExercise(session.getCurrentExercise());
+  setAppState({ selectedProgram: program, workout: session.getState() });
+  emit(APP_EVENTS.PROGRAM_SELECTED, session.getState());
+  session.readyWorkout();
+  emit(APP_EVENTS.WORKOUT_READY, session.getState());
+  showIntro();
+}
+
+function startTraining() {
+  if (!workout?.startWorkout()) return;
+  emit(APP_EVENTS.WORKOUT_START, workout.getState());
+  showExerciseReady(workout.getCurrentExercise());
 }
 
 function startRest(completed) {
   const next = selectedProgram.exercises[workout.getState().currentExerciseIndex + 1];
   document.querySelector("#rest-completed").textContent =
-    `${completed.reps} / ${completed.targetReps} ${EXERCISE_NAMES[completed.exerciseId].toUpperCase()} REPS`;
+    `${completed.completedReps} / ${completed.targetReps} ${EXERCISE_NAMES[completed.exerciseId].toUpperCase()} REPS`;
   document.querySelector("#rest-next").textContent = EXERCISE_NAMES[next.id].toUpperCase();
   const endsAt = Date.now() + REST_DURATION_SECONDS * 1000;
   const tick = () => {
@@ -348,16 +426,21 @@ function startRest(completed) {
 }
 
 function completeExercise(result) {
-  const completed = workout?.completeCurrentExercise(result);
+  const completed = workout?.completeCurrentExercise({
+    ...result, errors: currentExerciseErrors,
+  });
   if (!completed) return;
   engine.reset();
   activeExercise = null;
   activeFormError = null;
   emit(APP_EVENTS.EXERCISE_COMPLETE, {
     programId: selectedProgram.id, exerciseId: completed.exerciseId,
-    reps: completed.reps, targetReps: completed.targetReps,
+    reps: completed.completedReps, targetReps: completed.targetReps,
+    result: completed,
   });
-  if (workout.getState().status === "REST") startRest(completed);
+  setAppState({ currentExercise: null, currentExerciseResult: null,
+    workout: workout.getState() });
+  if (workout.getState().status === WORKOUT_STATUSES.REST) startRest(completed);
   else finishWorkout();
 }
 
@@ -365,6 +448,7 @@ function returnToPrograms() {
   clearRestTimer();
   engine.reset();
   activeExercise = null;
+  currentExerciseErrors = [];
   resetFormFeedback();
   if (workout) {
     const programId = selectedProgram.id;
@@ -373,7 +457,23 @@ function returnToPrograms() {
   }
   workout = null;
   selectedProgram = null;
+  setAppState({ selectedProgram: null, workout: null, currentExercise: null,
+    currentExerciseResult: null });
   showFlow(sessionCalibration ? "PROGRAMS" : "CALIBRATION");
+}
+
+function repeatWorkout() {
+  if (!workout || !selectedProgram || flowView !== "RESULTS") return;
+  engine.reset();
+  currentExerciseErrors = [];
+  workout.resetWorkout();
+  emit(APP_EVENTS.WORKOUT_RESET, { programId: selectedProgram.id });
+  workout.selectProgram();
+  workout.readyWorkout();
+  setAppState({ workout: workout.getState(), currentExercise: null,
+    currentExerciseResult: null });
+  emit(APP_EVENTS.WORKOUT_READY, workout.getState());
+  showIntro();
 }
 
 renderProgramCards();
@@ -398,7 +498,10 @@ const errorMessages = {
 };
 
 function showStatus(message, detail = "", isError = false) {
-  if (status.textContent !== message) status.textContent = message;
+  if (status.textContent !== message) {
+    status.textContent = message;
+    setAppState({ cameraStatus: message });
+  }
   status.classList.toggle("is-error", isError);
   if (help.textContent !== detail) help.textContent = detail;
   help.hidden = !detail;
@@ -420,6 +523,13 @@ function showPoseGuidance({ quality, calibrationState, progress, resetReason }) 
   showProgress(progress, calibrationState === "CALIBRATED");
 
   if (activeExercise) {
+    if (activeExercise === "pushup") {
+      if (!quality.bodyDetected) showStatus("Stand in front of the camera");
+      else if (quality.view === "FRONT") showStatus("Turn sideways to the camera");
+      else if (!engine.getResult()?.visible) showStatus("Keep your full side profile in frame");
+      else showStatus("Ready for Push-up");
+      return;
+    }
     if (quality.framing === "NO_BODY") showStatus("Stand in front of the camera");
     else if (quality.framing === "TOO_CLOSE") showStatus("Move farther from the camera");
     else if (quality.view !== engine.getRequiredView()) {
@@ -457,6 +567,7 @@ function showPoseGuidance({ quality, calibrationState, progress, resetReason }) 
 function showError(error) {
   const [message, detail] = errorMessages[error.code] || errorMessages.CAMERA_ERROR;
   showStatus(message, detail, true);
+  setAppState({ cameraStatus: error.code ?? "CAMERA_ERROR" });
   fpsIndicator.textContent = "FPS --";
 }
 
@@ -472,6 +583,7 @@ function renderState(state) {
 function setState(nextState) {
   if (!screens[nextState] || nextState === currentState) return;
   currentState = nextState;
+  if (nextState === APP_STATES.SPLASH) setAppState({ screen: APP_STATES.SPLASH });
   emit(APP_EVENTS.STATE_CHANGED, { state: nextState });
 }
 
@@ -488,10 +600,13 @@ on(APP_EVENTS.POSE_VIEW, ({ view }) => {
   viewIndicator.textContent = `VIEW: ${view}`;
   squatViewValue.textContent = view;
 });
-on(APP_EVENTS.REP, ({ rep, clean }) => {
+on(APP_EVENTS.REP, ({ rep, clean, errors }) => {
   const target = workout?.getCurrentExercise()?.targetReps;
   repValue.textContent = target ? `${Math.min(rep, target)} / ${target}` : String(rep);
   cleanStreak = clean ? cleanStreak + 1 : 0;
+  for (const error of errors ?? []) {
+    currentExerciseErrors.push({ rep, code: error.code, severity: error.severity });
+  }
 });
 on(APP_EVENTS.POSE_QUALITY, showPoseGuidance);
 on(APP_EVENTS.POSE_RESULT, ({ landmarks, fps, timestampMs }) => {
@@ -521,8 +636,14 @@ on(APP_EVENTS.POSE_RESULT, ({ landmarks, fps, timestampMs }) => {
   } else if (calibrationStatus.state === "CALIBRATED" &&
              lastCalibrationState !== "CALIBRATED") {
     sessionCalibration = calibrationStatus.calibration;
+    setAppState({ calibration: { state: "CALIBRATED", progress: 1,
+      result: sessionCalibration } });
     emit(APP_EVENTS.CALIBRATION_COMPLETE, calibrationStatus.calibration);
     if (flowView === "CALIBRATION") showFlow("PROGRAMS");
+  }
+  if (flowView === "CALIBRATION" && calibrationStatus.state !== "CALIBRATED") {
+    setAppState({ calibration: { state: calibrationStatus.state,
+      progress: calibrationStatus.progress, result: null } });
   }
   lastCalibrationState = calibrationStatus.state;
   if (flowView === "WORKOUT" && activeExercise) {
@@ -543,6 +664,11 @@ on(APP_EVENTS.POSE_RESULT, ({ landmarks, fps, timestampMs }) => {
     } else if (activeExercise === "sidebend") {
       angleValue.textContent = Number.isFinite(analysis.metrics.torsoAngleDeg)
         ? `${Math.round(analysis.metrics.torsoAngleDeg)}°` : "—";
+    } else if (activeExercise === "pushup") {
+      angleValue.textContent = Number.isFinite(analysis.metrics.elbowAngle)
+        ? `${Math.round(analysis.metrics.elbowAngle)}°` : "—";
+      squatViewValue.textContent = analysis.metrics.selectedView;
+      viewIndicator.textContent = `VIEW: ${analysis.metrics.selectedView}`;
     } else {
       const { hL, hR } = analysis.metrics;
       angleValue.textContent = Number.isFinite(hL) && Number.isFinite(hR)
@@ -550,9 +676,13 @@ on(APP_EVENTS.POSE_RESULT, ({ landmarks, fps, timestampMs }) => {
     }
     if (analysis.reps >= workout.getCurrentExercise().targetReps) {
       completeExercise({ reps: analysis.reps, cleanReps: analysis.cleanReps });
+    } else {
+      setAppState({ currentExerciseResult: analysis });
     }
   }
-  if (!cameraFrame.hidden) drawPose(canvas, landmarks, quality,
+  const drawQuality = activeExercise === "pushup" && engine.getResult()?.visible
+    ? { ...quality, framing: "READY" } : quality;
+  if (!cameraFrame.hidden) drawPose(canvas, landmarks, drawQuality,
     activeExercise === "squat" ? activeFormError : null);
   emit(APP_EVENTS.POSE_QUALITY, {
     quality,
@@ -564,10 +694,12 @@ on(APP_EVENTS.POSE_RESULT, ({ landmarks, fps, timestampMs }) => {
 
 async function enterCamera() {
   const thisSession = ++sessionId;
+  resetAppState();
   clearRestTimer();
   engine.reset();
   resetFormFeedback();
   activeExercise = null;
+  currentExerciseErrors = [];
   selectedProgram = null;
   workout = null;
   sessionCalibration = null;
@@ -621,6 +753,7 @@ function leaveCamera() {
   engine.reset();
   resetFormFeedback();
   activeExercise = null;
+  currentExerciseErrors = [];
   selectedProgram = null;
   workout = null;
   sessionCalibration = null;
@@ -639,17 +772,24 @@ function leaveCamera() {
   showProgress(0);
   fpsIndicator.textContent = "FPS --";
   setState(APP_STATES.SPLASH);
+  resetAppState();
 }
 
 endSquatButton.addEventListener("click", returnToPrograms);
 document.querySelectorAll(".return-programs-button").forEach((button) =>
   button.addEventListener("click", returnToPrograms));
-document.querySelector("#next-exercise-button").addEventListener("click", () => {
-  if (workout?.getState().status !== "REST") return;
-  clearRestTimer();
-  beginExercise(workout.nextExercise());
+document.querySelector("#start-training-button").addEventListener("click", startTraining);
+document.querySelector("#start-exercise-button").addEventListener("click", () => {
+  if (workout?.getState().status === WORKOUT_STATUSES.EXERCISE_READY) {
+    activateExercise(workout.getCurrentExercise());
+  }
 });
-document.querySelector("#finish-demo-button").addEventListener("click", finishWorkout);
+document.querySelector("#next-exercise-button").addEventListener("click", () => {
+  if (workout?.getState().status !== WORKOUT_STATUSES.REST) return;
+  clearRestTimer();
+  showExerciseReady(workout.readyNextExercise());
+});
+repeatButton.addEventListener("click", repeatWorkout);
 
 document.querySelector("#start-button").addEventListener("click", enterCamera);
 document.querySelector("#back-button").addEventListener("click", () => {

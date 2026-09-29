@@ -53,14 +53,32 @@
         </div>
         <section id="programs-view" class="flow-view programs-view" aria-labelledby="programs-title" hidden>
           <p class="eyebrow">TRAINING PROGRAMS</p>
-          <h2 id="programs-title">CHOOSE YOUR TRAINING</h2>
-          <p class="flow-intro">Start with the available development workout. More movement modules are coming soon.</p>
+          <h2 id="programs-title">CHOOSE YOUR WORKOUT</h2>
+          <p class="flow-intro">Choose a workout to review its exercises before starting.</p>
           <div id="program-cards" class="program-cards"></div>
+        </section>
+        <section id="intro-view" class="flow-view intro-view" aria-labelledby="intro-title" hidden>
+          <p id="intro-number" class="eyebrow"></p>
+          <h2 id="intro-title"></h2>
+          <p id="intro-count" class="flow-kicker"></p>
+          <div id="intro-exercises" class="results-exercises"></div>
+          <p id="intro-duration" class="flow-intro"></p>
+          <button id="start-training-button" class="primary-button flow-button" type="button">START TRAINING</button>
+          <button class="secondary-button return-programs-button" type="button">BACK TO WORKOUTS</button>
         </section>
         <div id="workout-heading" class="workout-heading" hidden>
           <span id="workout-program-name" class="flow-kicker"></span>
           <span id="workout-exercise-number" class="flow-kicker"></span>
         </div>
+        <section id="exercise-ready-view" class="flow-view exercise-ready-view" aria-labelledby="exercise-ready-title" hidden>
+          <p id="exercise-ready-step" class="eyebrow">NEXT EXERCISE</p>
+          <h2 id="exercise-ready-title"></h2>
+          <p id="exercise-ready-reps" class="rest-completed"></p>
+          <p id="exercise-ready-position" class="flow-kicker"></p>
+          <p id="exercise-ready-help" class="flow-intro"></p>
+          <button id="start-exercise-button" class="primary-button flow-button" type="button">START EXERCISE</button>
+          <button class="secondary-button return-programs-button" type="button">BACK TO WORKOUTS</button>
+        </section>
         <section id="rest-view" class="flow-view rest-view" aria-labelledby="rest-title" hidden>
           <p class="eyebrow">EXERCISE COMPLETE</p>
           <h2 id="rest-title">REST</h2>
@@ -68,14 +86,7 @@
           <p class="flow-kicker">NEXT</p>
           <p id="rest-next" class="rest-next"></p>
           <strong id="rest-timer" class="rest-timer" aria-live="off">20</strong>
-          <button id="next-exercise-button" class="primary-button flow-button" type="button">NEXT EXERCISE <span aria-hidden="true">↗</span></button>
-          <button class="secondary-button return-programs-button" type="button">← RETURN TO PROGRAMS</button>
-        </section>
-        <section id="unavailable-view" class="flow-view unavailable-view" aria-labelledby="unavailable-title" hidden>
-          <p class="eyebrow">COMING SOON</p>
-          <h2 id="unavailable-title"></h2>
-          <p>Exercise module coming next.</p>
-          <button id="finish-demo-button" class="primary-button flow-button" type="button">FINISH DEMO WORKOUT <span aria-hidden="true">↗</span></button>
+          <button id="next-exercise-button" class="primary-button flow-button" type="button">PREPARE NEXT EXERCISE <span aria-hidden="true">↗</span></button>
           <button class="secondary-button return-programs-button" type="button">← RETURN TO PROGRAMS</button>
         </section>
         <section id="results-view" class="flow-view results-view" aria-labelledby="results-title" hidden>
@@ -86,9 +97,10 @@
           <div class="results-stats">
             <p>EXERCISES COMPLETED <strong id="results-count"></strong></p>
             <p>DURATION <strong id="results-duration"></strong></p>
-            <p>STATUS <strong>Development workout</strong></p>
+            <p>STATUS <strong>Completed</strong></p>
           </div>
-          <button class="primary-button flow-button return-programs-button" type="button">RETURN TO PROGRAMS <span aria-hidden="true">↗</span></button>
+          <button id="repeat-workout-button" class="primary-button flow-button" type="button">REPEAT WORKOUT</button>
+          <button class="secondary-button return-programs-button" type="button">BACK TO WORKOUTS</button>
         </section>
         <div class="camera-frame" aria-label="Live mirrored camera view with pose skeleton">
           <video id="camera-video" autoplay muted playsinline aria-label="Mirrored webcam video"></video>

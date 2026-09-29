@@ -1,98 +1,57 @@
 # Motion Quest
 
-Motion Quest is a browser-based fitness game for the **Admit Hackathon Motion case**: the player's body becomes the controller. The eventual experience will use a camera to recognize movement, give form feedback, and turn a workout into a quest. The current flow tracks Squat, Arm Raise, and Side Bend within training programs, with rest and a session summary.
+Motion Quest is a browser fitness game for the **Admit Hackathon Motion case**. Your body is the controller: the webcam and MediaPipe provide pose landmarks, while our own code smooths them, checks visibility, calibrates the user, and analyzes movements. Video stays on your device; the app does not upload camera frames.
 
-The Splash and camera screens state the privacy model: **“Video stays on your device.”** Camera frames are processed in the browser; this app does not upload them. START asks for camera permission, and BACK stops all camera tracks.
-
-## Architecture
-
-The pose flow is `camera → MediaPipe landmarks → our One Euro smoothing → pose quality and calibration → active exercise analyzer → rep/hint events → workout session → interface`. MediaPipe provides body landmarks. Our own code implements filtering, geometry, visibility checks, view detection, calibration, Squat, Arm Raise, and Side Bend repetition decisions, and Squat form feedback. Program definitions are data in `src/programs.js`; `src/workout.js` owns session transitions without DOM access. See [CONTRACT.md](./CONTRACT.md) for module boundaries and data contracts.
-
-Current files:
-
-| File | Role |
-| --- | --- |
-| `index.html` | Splash and camera screen markup |
-| `styles.css` | Dark, responsive game style and design palette |
-| `src/main.js` | Screen state and button behavior |
-| `src/camera.js` | Webcam permission, stream lifecycle, and camera errors |
-| `src/pose.js` | MediaPipe PoseLandmarker and video frame loop |
-| `src/filter.js` | One Euro smoothing per landmark coordinate |
-| `src/poseQuality.js` | Visibility, distance, framing, and view codes |
-| `src/calibration.js` | Stable neutral-standing calibration window |
-| `src/geometry.js` | Pixel-corrected distance and angle helpers |
-| `src/exercises/squat.js` | Squat state machine, repetition validation, and form checks |
-| `src/exercises/armraise.js` | FRONT-view Arm Raise state machine and repetition validation |
-| `src/exercises/sidebend.js` | FRONT-view Side Bend state machine and repetition validation |
-| `src/engine.js` | Current exercise owner and `rep`/`hint` event publisher |
-| `src/programs.js` | Program definitions and exercise names |
-| `src/workout.js` | Workout session state and completed exercise results |
-| `src/drawPose.js` | Transparent pose skeleton overlay |
-| `src/config.js` | Shared states, events, and camera/pose settings |
-| `src/events.js` | Local publish/subscribe event bus |
-| `CONTRACT.md` | Planned analyzer, engine, and error interfaces |
-
-MediaPipe Tasks Vision **0.10.35** is copied into `vendor/mediapipe/` with its WASM runtime. The Pose Landmarker Lite model is at `vendor/mediapipe/models/pose_landmarker_lite.task`. These files are served locally; the app does not load them from `node_modules` or a CDN. MediaPipe Tasks Vision is Apache-2.0 licensed. The Lite model comes from Google's MediaPipe model distribution.
+The current motion foundation tracks **Squat, Arm Raise, Side Bend, and Push-up**. Squat has form feedback; the other analyzers currently count complete repetitions. Workout results, rest, and repeat flow are implemented. XP, quests, accounts, and a real backend are outside this foundation.
 
 ## Run locally
 
-There is no build step. Use a local HTTP server from the repository root, then open its localhost URL:
+From the repository root:
 
 ```sh
 python -m http.server 8000
 ```
 
-Open `http://localhost:8000/`. Any static server that supports ES modules is fine. Opening `index.html` directly as a file may block module loading in some browsers.
+Open `http://localhost:8000/` in a browser and allow camera access. Use localhost or HTTPS; opening `index.html` directly may block camera access or ES modules. MediaPipe Tasks Vision and the Pose Landmarker Lite model are served from `vendor/mediapipe/`; no build step or CDN is needed.
 
-Camera permission requires `localhost` or HTTPS. Opening `index.html` directly as a file will not work reliably.
+## Workouts
 
-## Test training flow
+| Workout | Exercises | Estimated time |
+| --- | --- | --- |
+| **Workout 1 — Full Body** | Squat 8 → Arm Raise 8 → Side Bend 10 | ~4 min |
+| **Workout 2 — Strength** | Squat 10 → Push-up 5 → Arm Raise 10 | ~5 min |
+| **Workout 3 — Light** | Arm Raise 8 → Side Bend 10 → Arm Raise 8 | ~3 min |
 
-1. Press START, allow the camera, and stand still until calibration completes. **CHOOSE YOUR TRAINING** should appear.
-2. Check the three cards. **Full Body Beginner** says AVAILABLE, **Desk Mode** says AVAILABLE • DEVELOPMENT, and **Strength** says COMING SOON and cannot be entered.
-3. Select Full Body Beginner. Check **EXERCISE 1 / 3**, **SQUAT**, and **REPS 0 / 8**. Turn SIDE if prompted.
-4. Perform eight counted squats. The counter must reach exactly **8 / 8** and move automatically to REST without a ninth rep.
-5. Check the 20-second countdown and **NEXT: ARM RAISE**. Press NEXT EXERCISE; the live Arm Raise stage should show **EXERCISE 2 / 3**, **REPS 0 / 8**, **PHASE DOWN**, and **VIEW FRONT** after facing the camera.
-6. Perform eight complete bilateral arm raises. The counter should reach exactly **8 / 8** and enter REST with **NEXT: SIDE BEND**. Press NEXT EXERCISE; Side Bend should show **EXERCISE 3 / 3**, **REPS 0 / 10**, **PHASE NEUTRAL**, **ANGLE**, and **VIEW FRONT**.
-7. Face the camera and complete ten full side bends in either direction, returning upright after each. At **10 / 10**, Results should show **WORKOUT COMPLETE**, all three exercise results, **3 / 3** completed, and actual elapsed time. RETURN TO PROGRAMS should reset the session.
-8. Select Full Body Beginner again. The Squat counter must restart at 0 / 8. RETURN TO PROGRAMS from the workout or rest view should also reset safely.
-9. Select Desk Mode. Arm Raise should be the first tracked exercise at 0 / 8. After its target, Clap remains a coming-soon placeholder; Side Bend is marked implemented on the card.
-10. Press BACK TO HOME. The camera indicator should turn off. START should launch a fresh calibration. Check the browser console for uncaught errors.
+All three workouts are available. After calibration, select a workout, review its intro, and press **START TRAINING**. Each stage shows an exercise preparation view; press **START EXERCISE** before repetition tracking begins. After a target is reached, REST shows the next stage. **PREPARE NEXT EXERCISE** moves to its preparation view without starting recognition. Results show the workout number, exercise results, duration, and completed count. **REPEAT WORKOUT** clears counts and returns to the same workout's intro without restarting the camera.
 
-## Arm Raise checks
+## Architecture
 
-Face the camera and raise both arms sideways from down to shoulder height, then lower fully. Five complete cycles should add five reps. Holding the top, returning before shoulder height, small shoulder movements, and one-frame pose spikes should not add reps. Turn SIDE during an incomplete rep and check that the screen says **Face the camera**; return FRONT and perform a fresh cycle. RETURN TO PROGRAMS and restart the workout to confirm the counter begins at zero.
+`camera → MediaPipe landmarks → One Euro smoothing → pose quality/calibration → exercise analyzer → workout controller → app state/events → UI`
 
-## Side Bend checks
+MediaPipe provides landmarks. Motion Quest owns all movement analysis. `src/exercises/` contains DOM-free, backend-free analyzers. `src/engine.js` owns one analyzer at a time. `src/programs.js` defines the numbered workouts; `src/workout.js` owns explicit session states and produces JSON results. `src/appState.js` and `src/events.js` expose the frontend integration boundary. `src/api.js` is an async, in-memory mock boundary for a future backend. Camera frames and landmarks never enter workout result data.
 
-Face the camera and alternate five full left and right bends, returning upright each time: the count should rise by five. Small leans below 20° should not count. Holding a full bend or returning only halfway should not add another rep. Turn SIDE during an incomplete bend: analysis should pause and guidance should say **Face the camera**. After a prolonged view loss, return FRONT and complete a fresh cycle without a phantom rep. Return to Programs, restart Full Body Beginner, and verify Side Bend begins at zero after reaching it again.
+See [CONTRACT.md](./CONTRACT.md) for states, analyzer outputs, events, and result shape. See [INTEGRATION.md](./INTEGRATION.md) for frontend and backend teammate guidance.
 
-## Squat regression checks
+## Manual checks
 
-1. Confirm the Splash shows **MOTION QUEST**, **“Your body is the controller.”**, **START**, and **“Video stays on your device.”**
-2. Press START and allow camera access. Check that the feed is visible and mirrored, the skeleton follows you, and FPS updates.
-3. Stand still with your full body in frame until calibration reaches 100%. Select Full Body Beginner, then turn sideways until **VIEW: SIDE**.
-4. Perform five controlled deep squats. Confirm **REPS 5 / 8**, **CLEAN REPS** increases, and the phase cycles UP → DOWN → BOTTOM → RISING → UP.
-5. Stay standing and shift slightly: the count must stay fixed. Make a shallow bend that never reaches the bottom: it must not count.
-6. Hold the bottom of a squat: the count must stay fixed. Return to standing: it should increase by exactly one.
-7. Turn FRONT during a squat: counting must pause and the screen must say **Turn sideways to the camera**. Return SIDE and start a fresh full cycle.
-8. Walk out of frame during an incomplete squat, then return after a moment: no phantom repetition should appear.
-9. Press **RETURN TO PROGRAMS** and start Full Body Beginner again: the counter and phase should reset. Press **BACK TO HOME** and check that the webcam indicator turns off; START should begin a fresh calibration.
-10. Complete a squat with a minimum knee angle between 100° and 125°. It should count but show `SQ_SHALLOW` guidance and not raise CLEAN REPS. A bend that never reaches 125° should still not count.
-11. Deliberately move a knee past its toe and then lean the torso far forward in separate reps. Confirm knee/toe or shoulder/hip highlights and one concrete correction at a time. Foot index visibility is needed for knee-over-toe feedback.
-12. Perform a rep under 900 ms but over the minimum count duration; check the minor speed warning and that it may still be clean. During a rising phase, hold knee angle around 145°–160° for over 1.5 seconds; check the stand-upright hint.
-13. Repeat a form issue and hold the bad position. Check that the feedback does not flicker, a hint is held at least 1.5 seconds, and the same hint is not retriggered within 4 seconds. After three clean reps in a row, check for **CLEAN!**
-14. Check desktop and mobile layouts and the browser console for uncaught errors.
+1. Press START, allow the camera, and stand still until calibration finishes. **CHOOSE YOUR WORKOUT** should appear; no analyzer should start automatically.
+2. Select each card. Confirm that it opens an intro with the correct exercise order and targets. Press BACK TO WORKOUTS, then select one again.
+3. Press START TRAINING. Confirm the first **EXERCISE_READY** view appears and counts remain zero until START EXERCISE is pressed.
+4. Complete Workout 1: Squat 8 from SIDE view → rest/prepare → Arm Raise 8 from FRONT view → rest/prepare → Side Bend 10 from FRONT view. Results should show 3 / 3.
+5. Complete Workout 2: Squat 10 → Push-up 5 → Arm Raise 10. Before Push-up, position the camera for a full SIDE profile with shoulder, elbow, wrist, hip, and ankle visible. Results should show 3 / 3.
+6. Complete Workout 3: Arm Raise 8 → Side Bend 10 → Arm Raise 8. Confirm the second Arm Raise starts at zero. Results should show 3 / 3.
+7. On any Results screen, press REPEAT WORKOUT. Confirm the same workout intro returns, counts are cleared, and START TRAINING is required again.
+8. Return to workout selection and start another program. BACK TO HOME should stop camera tracks; START should begin a fresh camera and calibration session. Check the browser console for uncaught errors.
+
+For motion-specific checks, hold a bottom position, perform a shallow partial movement, briefly leave the required FRONT/SIDE view, and lose a required joint mid-cycle. None should create a phantom repetition. Squat uses pixel-corrected knee geometry and form thresholds; 2D camera angle and landmark occlusion can affect feedback. Push-up uses an exercise-specific visibility check so a horizontal body is not blocked by standing framing rules.
 
 ## Roadmap
 
-| Gate | Planned milestone |
+| Gate | Focus |
 | --- | --- |
-| G1 | Splash, visual system, screen state, architecture contract |
-| G2 | Camera and pose pipeline (G2.1); smoothing, framing, view, calibration (G2.2); squat counting (G2.3a); squat form feedback (G2.3b); training flow foundation |
-| G3 | First movement analyzers, repetition counting, and form feedback |
-| G4 | Quest flow, progression, and motion driven navigation |
-| G5 | Wider exercise coverage, recovery paths, and accessibility polish |
-| G6 | Testing, performance work, documentation, and release readiness |
-
-Squat, Arm Raise, and Side Bend are the implemented exercise analyzers. Clap and Push-up appear in program data but never generate fake repetitions. Arm Raise and Side Bend count motion cycles but do not classify form errors yet. The app does not award XP or run a quest. G2.3b Squat form checks use 2D camera geometry and initial thresholds, so camera angle, foot landmark visibility, and user proportions can affect feedback. Side Bend uses shoulder and hip midpoints, so camera position and torso rotation can affect its angle. Calibration and workout results stay in memory for the current camera session only.
+| G1 | Splash and application contract |
+| G2 | Camera, pose, smoothing, calibration, four movement analyzers, and workout flow |
+| G3 | Form feedback and movement reliability |
+| G4 | Game progression and navigation |
+| G5 | Accessibility and recovery paths |
+| G6 | Performance, verification, and release readiness |
