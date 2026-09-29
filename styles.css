@@ -95,6 +95,14 @@ button { font: inherit; cursor: pointer; }
 .frame-corner { position: absolute; z-index: 3; width: 28px; height: 28px; border-color: var(--accent); border-style: solid; pointer-events: none; }
 .top-left { top: 16px; left: 16px; border-width: 2px 0 0 2px; }.top-right { top: 16px; right: 16px; border-width: 2px 2px 0 0; }.bottom-left { bottom: 16px; left: 16px; border-width: 0 0 2px 2px; }.bottom-right { bottom: 16px; right: 16px; border-width: 0 2px 2px 0; }
 .fps-indicator { position: absolute; z-index: 3; top: 16px; left: 50%; padding: 6px 9px; border: 1px solid var(--border); background: #0b0e17c7; color: var(--muted); font-size: 10px; transform: translateX(-50%); }
+.calibration-hud { display: flex; align-items: center; justify-content: space-between; gap: 24px; width: min(100%, 760px); margin-top: -10px; font-family: Consolas, "Courier New", monospace; font-size: 11px; font-weight: 700; letter-spacing: .1em; }
+.view-indicator { flex: none; padding: 9px 12px; border: 1px solid var(--border); color: var(--text); background: var(--surface); }
+.calibration-progress { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.calibration-progress-label { flex: none; color: var(--muted); }
+.calibration-progress-track { width: clamp(100px, 20vw, 190px); height: 8px; border: 1px solid var(--border); border-radius: 99px; overflow: hidden; background: var(--surface); }
+.calibration-progress-fill { width: 0; height: 100%; border-radius: inherit; background: var(--accent); transition: width .08s linear; }
+.calibration-hud.is-complete .calibration-progress-fill { background: var(--success); }
+.calibration-hud.is-complete .calibration-progress-label { color: var(--success); }
 .camera-status-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; width: min(100%, 760px); min-height: 56px; }
 .camera-status { margin: 0; color: var(--text); font-size: 16px; font-weight: 700; }
 .camera-status.is-error { color: var(--error); }
@@ -123,9 +131,13 @@ button { font: inherit; cursor: pointer; }
   .splash-art { min-height: 280px; }
   .art-caption { left: 17px; font-size: 8px; }
   .footer { font-size: 8px; }
+  .calibration-hud { flex-wrap: wrap; gap: 12px; }
+  .calibration-progress { width: 100%; justify-content: space-between; }
+  .calibration-progress-track { flex: 1; }
   .camera-status-row { flex-direction: column; gap: 8px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .primary-button { transition: none; }
+  .calibration-progress-fill { transition: none; }
 }

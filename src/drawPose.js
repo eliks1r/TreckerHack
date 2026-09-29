@@ -26,16 +26,19 @@ export function clearPose(canvas) {
   canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
 }
 
-export function drawPose(canvas, landmarks) {
+export function drawPose(canvas, landmarks, quality) {
   const context = canvas.getContext("2d");
   context.clearRect(0, 0, canvas.width, canvas.height);
   if (!landmarks || !canvas.width || !canvas.height) return;
 
+  const color = quality?.framing === "READY"
+    ? "#2FE08A"
+    : quality && quality.framing !== "NO_BODY" ? "#FFC24B" : "#3B5BFF";
   context.lineCap = "round";
   context.lineJoin = "round";
-  context.strokeStyle = "#3B5BFF";
+  context.strokeStyle = color;
   context.lineWidth = Math.max(3, canvas.width / 160);
-  context.shadowColor = "#3B5BFF";
+  context.shadowColor = color;
   context.shadowBlur = 8;
 
   for (const [start, end] of BODY_CONNECTIONS) {
@@ -49,20 +52,25 @@ export function drawPose(canvas, landmarks) {
   }
 
   context.shadowBlur = 0;
-  for (const point of landmarks) {
+  for (const [index, point] of landmarks.entries()) {
     if (!visible(point)) continue;
+    const isFace = index <= 10;
     context.beginPath();
     context.arc(
       point.x * canvas.width,
       point.y * canvas.height,
-      Math.max(3, canvas.width / 180),
+      isFace ? Math.max(1.5, canvas.width / 320) : Math.max(3, canvas.width / 180),
       0,
       Math.PI * 2,
     );
-    context.fillStyle = "#2FE08A";
+    context.globalAlpha = isFace ? 0.45 : 1;
+    context.fillStyle = color;
     context.fill();
-    context.lineWidth = 1.5;
-    context.strokeStyle = "#0B0E17";
-    context.stroke();
+    if (!isFace) {
+      context.lineWidth = 1.5;
+      context.strokeStyle = "#0B0E17";
+      context.stroke();
+    }
   }
+  context.globalAlpha = 1;
 }

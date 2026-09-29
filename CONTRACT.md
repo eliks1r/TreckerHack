@@ -1,12 +1,12 @@
 # Motion Quest contracts
 
-This document defines the interfaces between modules. G2.1 implements the shell, webcam lifecycle, pose tracking, skeleton drawing, and event bus. The analyzer and engine contracts below guide later gates; they are not active yet.
+This document defines the interfaces between modules. G2.2 adds smoothed landmarks, pose quality, view classification, and a neutral-stance calibration to the working camera pipeline. Exercise analyzers and the game engine remain planned.
 
 ## Architecture and module boundaries
 
-The planned pipeline is `camera → MediaPipe landmarks → smoothing and geometry → exercise analyzer → engine events → UI`. MediaPipe will supply landmark positions. Motion Quest code will own movement analysis, phase detection, form rules, and feedback.
+The pipeline is `camera → MediaPipe raw landmarks → One Euro smoothing → pose quality and view → neutral calibration → UI`. Later analyzers will consume the smoothed landmarks and calibration context. MediaPipe supplies landmark positions; Motion Quest code owns movement analysis, phase detection, form rules, and feedback.
 
-| Module | Responsibility | G1 status |
+| Module | Responsibility | Status |
 | --- | --- | --- |
 | `index.html`, `styles.css` | Accessible application shell and visual design | Implemented |
 | `src/config.js` | Shared state, event names, and camera/pose settings | Implemented |
@@ -14,7 +14,11 @@ The planned pipeline is `camera → MediaPipe landmarks → smoothing and geomet
 | `src/main.js` | Screen routing, status UI, and resource lifecycle | Splash and camera implemented |
 | `src/camera.js` | Browser permission, video stream, track cleanup, normalized camera errors | Implemented |
 | `src/pose.js` | MediaPipe initialization, GPU to CPU fallback, one inference per video frame | Implemented |
-| `src/drawPose.js` | Transparent canvas skeleton aligned to the mirrored video | Implemented |
+| `src/filter.js` | Independent One Euro x/y filters per landmark; resets on tracking loss | Implemented |
+| `src/geometry.js` | Small pixel-corrected distance and angle helpers | Implemented |
+| `src/poseQuality.js` | Body visibility, framing, distance, and view codes | Implemented |
+| `src/calibration.js` | Stable 1.5-second neutral-stance sample window | Implemented |
+| `src/drawPose.js` | Transparent canvas skeleton aligned to the mirrored video; readiness colors | Implemented |
 | Future analyzer modules | Movement phases, repetition validation, and form errors | Planned |
 | Future engine | Convert analyzer output into events and application progress | Planned |
 
@@ -25,15 +29,21 @@ No module should send video frames off device. The UI receives state and engine 
 | State | Meaning | Entry |
 | --- | --- | --- |
 | `SPLASH` | Initial screen with project title, privacy line, and START | App load or Back |
-| `CAMERA` | Live webcam, pose tracking, status, or camera error | START |
-| `CALIBRATION` | Future visibility and position setup | Planned |
+| `CAMERA` | Live webcam, pose tracking, framing guidance, calibration, or camera error | START |
+| `CALIBRATION` | Possible future separate calibration screen; G2.2 calibrates inside CAMERA | Planned |
 | `QUEST_SELECT` | Future motion-driven selection | Planned |
 | `ACTIVE` | Future movement session | Planned |
 | `PAUSED` | Future interruption or user pause | Planned |
 | `RESULTS` | Future session summary | Planned |
 | `ERROR` | Future recoverable or fatal issue screen | Planned |
 
-Transitions are owned by `src/main.js` (or a future state controller). In G2.1, only `SPLASH ↔ CAMERA` is available. A state change emits `app:state-changed` with `{ state }`. Returning to Splash stops the pose loop, closes the landmarker, and stops every camera track.
+Transitions are owned by `src/main.js` (or a future state controller). In G2.2, only `SPLASH ↔ CAMERA` is available. A state change emits `app:state-changed` with `{ state }`. Returning to Splash stops the pose loop, closes the landmarker, stops every camera track, resets smoothing, and clears calibration.
+
+## Pose quality and calibration contract
+
+`assessPoseQuality(landmarks, videoWidth, videoHeight)` receives **smoothed** normalized landmarks and returns `{ bodyDetected, fullBodyVisible, upperBodyVisible, missingJoints, framing, view, metrics }`. `framing` is one of `NO_BODY`, `PARTIAL_BODY`, `TOO_CLOSE`, or `READY`; `view` is `FRONT`, `SIDE`, or `UNKNOWN`. `metrics` includes normalized body height and pixel-corrected shoulder width, torso length, and their ratio. Framing takes priority over calibration, but the view label does not block calibration by itself.
+
+`createCalibration().update(landmarks, quality, nowMs, videoWidth, videoHeight)` returns `{ state, progress, resetReason?, calibration? }`. It samples a visible neutral stance for 1500 ms while shoulder and hip midpoint drift stays under configured limits. `state` is `WAITING`, `READY`, `CALIBRATING`, or `CALIBRATED`. A completed result is `{ theta0, sw0, torsoLen, legLen, timestamp, derived: { up, start } }`; lengths are in video pixels and `theta0` is in degrees. The `derived` values are future thresholds only; no repetition analysis runs in G2.2. Invalid framing or movement resets the in-memory calibration.
 
 ## Analyzer output contract (planned)
 
@@ -59,7 +69,7 @@ Each future exercise analyzer will expose `analyze(landmarks, context)` and retu
 
 Events will be published through `src/events.js`. Event payloads are plain objects; subscribers must not mutate them.
 
-G2.1 currently uses `camera:ready`, `camera:error`, `pose:ready`, `pose:result`, `pose:error`, `pose:body-found`, and `pose:body-lost`. A `pose:result` payload is `{ landmarks, fps, timestampMs }`, where `landmarks` is the first detected pose or `null`.
+G2.2 uses `camera:ready`, `camera:error`, `pose:ready`, `pose:result`, `pose:error`, `pose:body-found`, `pose:body-lost`, `pose:quality`, `pose:view`, `calibration:start`, `calibration:progress`, `calibration:complete`, and `calibration:reset`. A `pose:result` payload is `{ landmarks, fps, timestampMs }`, where `landmarks` is the **smoothed** first detected pose or `null`. `pose:quality` carries the quality result and calibration state. `calibration:complete` carries the completed calibration object.
 
 | Event | Planned payload | Purpose |
 | --- | --- | --- |
@@ -83,4 +93,4 @@ G2.1 currently uses `camera:ready`, `camera:error`, `pose:ready`, `pose:result`,
 | `LOW_LIGHT` | Image quality is too poor for reliable tracking | Pause counting and show lighting guidance |
 | `MULTI_PERSON` | More than one person is in view | Pause counting and request one person in frame |
 
-G2.1 handles camera and model errors. Movement-specific error states remain planned.
+G2.2 handles camera and model errors plus on-screen framing guidance. Movement-specific form errors remain planned.

@@ -2,7 +2,9 @@ import {
   MEDIAPIPE_WASM_PATH,
   NUM_POSES,
   POSE_MODEL_PATH,
+  TRACKING_LOSS_RESET_MS,
 } from "./config.js";
+import { createLandmarkSmoother } from "./filter.js";
 
 let landmarker = null;
 let loopVideo = null;
@@ -12,6 +14,9 @@ let initId = 0;
 let lastVideoTime = -1;
 let lastTimestamp = -1;
 let recentFrames = [];
+let lastBodyTime = null;
+let smootherResetAfterLoss = false;
+const smoother = createLandmarkSmoother();
 
 function cancelled() {
   return Object.assign(new Error("Pose initialization cancelled."), { code: "POSE_CANCELLED" });
@@ -70,6 +75,9 @@ export function startPoseLoop(videoElement, onResult, onError) {
   lastVideoTime = -1;
   lastTimestamp = -1;
   recentFrames = [];
+  lastBodyTime = null;
+  smootherResetAfterLoss = false;
+  smoother.reset();
   const useVideoFrames = typeof videoElement.requestVideoFrameCallback === "function";
 
   function schedule() {
@@ -91,6 +99,17 @@ export function startPoseLoop(videoElement, onResult, onError) {
         const timestampMs = Math.max(now, lastTimestamp + 1);
         lastTimestamp = timestampMs;
         const result = landmarker.detectForVideo(videoElement, timestampMs);
+        const rawLandmarks = result.landmarks[0] || null;
+        let landmarks = null;
+        if (rawLandmarks) {
+          lastBodyTime = timestampMs;
+          smootherResetAfterLoss = false;
+          landmarks = smoother.smooth(rawLandmarks, timestampMs);
+        } else if (lastBodyTime !== null && !smootherResetAfterLoss &&
+                   timestampMs - lastBodyTime >= TRACKING_LOSS_RESET_MS) {
+          smoother.reset();
+          smootherResetAfterLoss = true;
+        }
 
         recentFrames.push(now);
         while (recentFrames.length > 1 && now - recentFrames[0] > 1000) {
@@ -98,7 +117,7 @@ export function startPoseLoop(videoElement, onResult, onError) {
         }
         const span = now - recentFrames[0];
         const fps = span > 0 ? Math.round((recentFrames.length - 1) * 1000 / span) : 0;
-        onResult({ landmarks: result.landmarks[0] || null, fps, timestampMs });
+        onResult({ landmarks, fps, timestampMs });
       }
       schedule();
     } catch (error) {
@@ -125,6 +144,9 @@ export function stopPoseLoop() {
   frameHandle = null;
   loopVideo = null;
   recentFrames = [];
+  lastBodyTime = null;
+  smootherResetAfterLoss = false;
+  smoother.reset();
 }
 
 export function disposePose() {
