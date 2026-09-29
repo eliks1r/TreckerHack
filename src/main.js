@@ -216,7 +216,8 @@ function renderProgramCards() {
     card.disabled = !program.developmentAvailable;
     const badge = document.createElement("span");
     badge.className = "program-badge";
-    badge.textContent = program.developmentAvailable ? "AVAILABLE • DEVELOPMENT" : "COMING SOON";
+    badge.textContent = program.exercises.every((item) => item.implemented)
+      ? "AVAILABLE" : program.developmentAvailable ? "AVAILABLE • DEVELOPMENT" : "COMING SOON";
     const title = document.createElement("h3");
     title.textContent = program.name.toUpperCase();
     const exercises = document.createElement("p");
@@ -242,6 +243,11 @@ function clearRestTimer() {
 function showResults() {
   const state = workout?.getState();
   if (!state || !selectedProgram) return;
+  const complete = state.exerciseResults.length === selectedProgram.exercises.length;
+  document.querySelector("#results-title").textContent = complete
+    ? "WORKOUT COMPLETE" : "WORKOUT SUMMARY";
+  document.querySelector(".results-stats p:last-child strong").textContent = complete
+    ? "Completed" : "Development workout";
   document.querySelector("#results-program").textContent = selectedProgram.name;
   const list = document.querySelector("#results-exercises");
   list.replaceChildren();
@@ -292,14 +298,15 @@ function beginExercise(exercise) {
   activeExercise = exercise.id;
   resetFormFeedback();
   const isSquat = exercise.id === "squat";
+  const isSideBend = exercise.id === "sidebend";
   squatTitle.textContent = EXERCISE_NAMES[exercise.id].toUpperCase();
   formPanel.hidden = !isSquat;
   cleanValue.parentElement.hidden = !isSquat;
   squatStats.classList.toggle("is-armraise", !isSquat);
-  angleLabel.textContent = isSquat ? "KNEE ANGLE" : "ARM HEIGHT";
+  angleLabel.textContent = isSquat ? "KNEE ANGLE" : isSideBend ? "ANGLE" : "ARM HEIGHT";
   repValue.textContent = `0 / ${exercise.targetReps}`;
-  phaseValue.textContent = isSquat ? "UP" : "DOWN";
-  angleValue.textContent = "—";
+  phaseValue.textContent = isSquat ? "UP" : isSideBend ? "NEUTRAL" : "DOWN";
+  angleValue.textContent = isSideBend ? "0°" : "—";
   document.querySelector("#workout-program-name").textContent = selectedProgram.name.toUpperCase();
   document.querySelector("#workout-exercise-number").textContent =
     `EXERCISE ${workout.getState().currentExerciseIndex + 1} / ${selectedProgram.exercises.length}`;
@@ -422,6 +429,8 @@ function showPoseGuidance({ quality, calibrationState, progress, resetReason }) 
     } else if (activeExercise === "armraise" &&
                (!quality.upperBodyVisible || !engine.getResult()?.visible)) {
       showStatus("Keep both arms visible");
+    } else if (activeExercise === "sidebend" && !engine.getResult()?.visible) {
+      showStatus("Keep shoulders and hips visible");
     } else showStatus(`Ready for ${EXERCISE_NAMES[activeExercise]}`);
     return;
   }
@@ -531,6 +540,9 @@ on(APP_EVENTS.POSE_RESULT, ({ landmarks, fps, timestampMs }) => {
       angleValue.textContent = Number.isFinite(analysis.metrics.kneeAngle)
         ? `${Math.round(analysis.metrics.kneeAngle)}°` : "—";
       renderFormFeedback(analysis.errors, quality, timestampMs, analysis.repEvent);
+    } else if (activeExercise === "sidebend") {
+      angleValue.textContent = Number.isFinite(analysis.metrics.torsoAngleDeg)
+        ? `${Math.round(analysis.metrics.torsoAngleDeg)}°` : "—";
     } else {
       const { hL, hR } = analysis.metrics;
       angleValue.textContent = Number.isFinite(hL) && Number.isFinite(hR)

@@ -2,8 +2,13 @@ import { APP_EVENTS, HINT_COOLDOWN_MS } from "./config.js";
 import { emit } from "./events.js";
 import { createSquat } from "./exercises/squat.js";
 import { createArmRaise } from "./exercises/armraise.js";
+import { createSideBend } from "./exercises/sidebend.js";
 
-const exerciseFactories = Object.freeze({ squat: createSquat, armraise: createArmRaise });
+const exerciseFactories = Object.freeze({
+  squat: createSquat,
+  armraise: createArmRaise,
+  sidebend: createSideBend,
+});
 
 export function createExerciseEngine() {
   let analyzer = null;

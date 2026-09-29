@@ -17,7 +17,7 @@ export const PROGRAMS = Object.freeze([
     exercises: [
       { id: "squat", targetReps: 8, implemented: true },
       { id: "armraise", targetReps: 8, implemented: true },
-      { id: "sidebend", targetReps: 10, implemented: false },
+      { id: "sidebend", targetReps: 10, implemented: true },
     ],
   },
   {
@@ -30,7 +30,7 @@ export const PROGRAMS = Object.freeze([
     exercises: [
       { id: "armraise", targetReps: 8, implemented: true },
       { id: "clap", targetReps: 8, implemented: false },
-      { id: "sidebend", targetReps: 10, implemented: false },
+      { id: "sidebend", targetReps: 10, implemented: true },
     ],
   },
   {

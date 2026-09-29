@@ -1,10 +1,10 @@
 # Motion Quest contracts
 
-This document defines the interfaces between modules. The current training flow adds program selection, session state, rest, and results around the existing squat analyzer. Game progression remains planned.
+This document defines the interfaces between modules. The training flow runs Squat, Arm Raise, and Side Bend through program selection, session state, rest, and results. Game progression remains planned.
 
 ## Architecture and module boundaries
 
-The pipeline is `camera → MediaPipe raw landmarks → One Euro smoothing → pose quality and view → neutral calibration → squat analyzer → engine event → UI`. MediaPipe supplies landmark positions; Motion Quest code owns movement analysis, phase detection, form checks, and corrective feedback.
+The pipeline is `camera → MediaPipe raw landmarks → One Euro smoothing → pose quality and view → neutral calibration → active exercise analyzer → engine event → UI`. MediaPipe supplies landmark positions; Motion Quest code owns movement analysis, phase detection, form checks, and corrective feedback.
 
 | Module | Responsibility | Status |
 | --- | --- | --- |
@@ -21,6 +21,7 @@ The pipeline is `camera → MediaPipe raw landmarks → One Euro smoothing → p
 | `src/drawPose.js` | Transparent canvas skeleton aligned to the mirrored video; readiness colors | Implemented |
 | `src/exercises/squat.js` | Pixel-corrected squat phases, repetition validation, and form classification | Implemented |
 | `src/exercises/armraise.js` | FRONT-view bilateral arm raise phases and repetition validation | Implemented; form errors planned |
+| `src/exercises/sidebend.js` | FRONT-view lateral torso angle and left/right repetition validation | Implemented; form errors planned |
 | `src/engine.js` | Own active analyzer, feed frames, publish `rep` and throttled `hint` events, reset exercise | Implemented |
 | `src/programs.js` | Program data and exercise display names; unavailable exercises remain explicit | Implemented |
 | `src/workout.js` | DOM-free workout session state and result transitions | Implemented |
@@ -44,11 +45,17 @@ Transitions are owned by `src/main.js` (or a future state controller). `SPLASH �
 
 ## Training program and workout contracts
 
-`PROGRAMS` is an array of data objects with `{ id, name, description, durationMinutes, mode, developmentAvailable, exercises }`. Each exercise has `{ id, targetReps, implemented }`. IDs are `squat`, `armraise`, `sidebend`, `pushup`, and `clap`. Full Body Beginner and Desk Mode are selectable in development mode. Strength is visible and disabled. Squat and Arm Raise have real analyzers; Side Bend, Clap, and Push-up remain placeholders.
+`PROGRAMS` is an array of data objects with `{ id, name, description, durationMinutes, mode, developmentAvailable, exercises }`. Each exercise has `{ id, targetReps, implemented }`. IDs are `squat`, `armraise`, `sidebend`, `pushup`, and `clap`. Full Body Beginner is fully available. Desk Mode is selectable in development mode because Clap remains unavailable. Strength is visible and disabled because Push-up is unavailable. Squat, Arm Raise, and Side Bend have real analyzers.
 
-`createWorkout(program)` owns `{ programId, currentExerciseIndex, status, exerciseResults, startedAt, endedAt }`. Status is `IDLE`, `ACTIVE`, `REST`, or `COMPLETE`. `startWorkout()` enters ACTIVE only when the first exercise is implemented. `completeCurrentExercise({ reps, cleanReps })` accepts an implemented ACTIVE exercise only after its target is met, records one result, and enters REST or COMPLETE. `nextExercise()` advances only from REST. `finishWorkout()` ends a partial development session; `resetWorkout()` clears all session data. No method reads or writes the DOM. The engine factory registry contains `squat` and `armraise`; unavailable exercise IDs cannot start an analyzer.
+`createWorkout(program)` owns `{ programId, currentExerciseIndex, status, exerciseResults, startedAt, endedAt }`. Status is `IDLE`, `ACTIVE`, `REST`, or `COMPLETE`. `startWorkout()` enters ACTIVE only when the first exercise is implemented. `completeCurrentExercise({ reps, cleanReps })` accepts an implemented ACTIVE exercise only after its target is met, records one result, and enters REST or COMPLETE. `nextExercise()` advances only from REST. `finishWorkout()` ends a partial development session; `resetWorkout()` clears all session data. No method reads or writes the DOM. The engine factory registry contains `squat`, `armraise`, and `sidebend`; unavailable exercise IDs cannot start an analyzer.
 
-The UI listens for counted `rep` events from the active analyzer, displays `reps / targetReps`, and completes the stage as soon as the target is reached. It resets the analyzer before showing REST, so further camera frames cannot add reps. The REST timer is 20 seconds and the user may press NEXT EXERCISE. Results show actual completed exercises, completed count, elapsed time, and a development status. No unimplemented stage receives synthetic results.
+The UI listens for counted `rep` events from the active analyzer, displays `reps / targetReps`, and completes the stage as soon as the target is reached. It resets the analyzer before showing REST, so further camera frames cannot add reps. The REST timer is 20 seconds and the user may press NEXT EXERCISE. Full Body Beginner completes after 8 Squats, 8 Arm Raises, and 10 Side Bends and shows all three results with elapsed time. A partial Desk Mode session keeps a development status. No unimplemented stage receives synthetic results.
+
+## Side Bend analyzer output contract
+
+`createSideBend(config)` exposes `{ id: "sidebend", view: "FRONT", analyze(landmarks, context), reset() }`. It receives smoothed shoulder and hip landmarks. Shoulder and hip midpoints use normalized coordinates; their displacement is converted to video pixels before calculating `torsoAngleDeg = atan2((shoulderMid.x - hipMid.x) * videoWidth, (hipMid.y - shoulderMid.y) * videoHeight) * 180 / PI`. Zero is upright, positive is a bend toward the mirrored display's left, and negative toward its right. The result contains `{ visible, phase, reps, cleanReps, errors: [], repEvent, metrics }`. Phases are `neutral`, `bending_left`, `left`, `returning_left`, `bending_right`, `right`, and `returning_right`. Metrics include signed `torsoAngleDeg`, `direction`, and phase confirmation diagnostics.
+
+An initial neutral position under 8° must be confirmed before arming. A full repetition passes 12° to start, reaches at least 20° on the same side, then returns below 8°; each phase transition requires three frames. A counted cycle lasts 600–10000 ms. Holding a bend, returning halfway, or a shallow movement does not count. Lost FRONT view or required joints pauses analysis and cancels an incomplete cycle after the tracking timeout while retaining completed reps. `cleanReps` provisionally equals `reps` until Side Bend form rules exist.
 
 ## Arm Raise analyzer output contract
 
