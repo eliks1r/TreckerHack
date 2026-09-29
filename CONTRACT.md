@@ -1,6 +1,6 @@
 # Motion Quest contracts
 
-This document defines the planned interfaces between modules. G1 implements only the shell, the two visible states, and a small event bus. The analyzer and engine contracts below guide later gates; they are not active yet.
+This document defines the interfaces between modules. G2.1 implements the shell, webcam lifecycle, pose tracking, skeleton drawing, and event bus. The analyzer and engine contracts below guide later gates; they are not active yet.
 
 ## Architecture and module boundaries
 
@@ -9,11 +9,12 @@ The planned pipeline is `camera → MediaPipe landmarks → smoothing and geomet
 | Module | Responsibility | G1 status |
 | --- | --- | --- |
 | `index.html`, `styles.css` | Accessible application shell and visual design | Implemented |
-| `src/config.js` | Shared state and event names; later, analysis thresholds | State names implemented |
+| `src/config.js` | Shared state, event names, and camera/pose settings | Implemented |
 | `src/events.js` | In-process `on(name, handler)` and `emit(name, detail)`; `on` returns an unsubscribe function | Implemented |
-| `src/main.js` | Screen routing and UI wiring | Splash and placeholder implemented |
-| Future camera adapter | Browser permission, video stream, and frame lifecycle | Planned |
-| Future pose adapter | MediaPipe initialization and normalized pose landmarks | Planned |
+| `src/main.js` | Screen routing, status UI, and resource lifecycle | Splash and camera implemented |
+| `src/camera.js` | Browser permission, video stream, track cleanup, normalized camera errors | Implemented |
+| `src/pose.js` | MediaPipe initialization, GPU to CPU fallback, one inference per video frame | Implemented |
+| `src/drawPose.js` | Transparent canvas skeleton aligned to the mirrored video | Implemented |
 | Future analyzer modules | Movement phases, repetition validation, and form errors | Planned |
 | Future engine | Convert analyzer output into events and application progress | Planned |
 
@@ -24,8 +25,7 @@ No module should send video frames off device. The UI receives state and engine 
 | State | Meaning | Entry |
 | --- | --- | --- |
 | `SPLASH` | Initial screen with project title, privacy line, and START | App load or Back |
-| `CAMERA` | G1 placeholder; no camera access occurs | START |
-| `CAMERA_REQUEST` | Future permission explanation and request | Planned |
+| `CAMERA` | Live webcam, pose tracking, status, or camera error | START |
 | `CALIBRATION` | Future visibility and position setup | Planned |
 | `QUEST_SELECT` | Future motion-driven selection | Planned |
 | `ACTIVE` | Future movement session | Planned |
@@ -33,7 +33,7 @@ No module should send video frames off device. The UI receives state and engine 
 | `RESULTS` | Future session summary | Planned |
 | `ERROR` | Future recoverable or fatal issue screen | Planned |
 
-Transitions are owned by `src/main.js` (or a future state controller). In G1, only `SPLASH ↔ CAMERA` is available. A state change emits `app:state-changed` with `{ state }`.
+Transitions are owned by `src/main.js` (or a future state controller). In G2.1, only `SPLASH ↔ CAMERA` is available. A state change emits `app:state-changed` with `{ state }`. Returning to Splash stops the pose loop, closes the landmarker, and stops every camera track.
 
 ## Analyzer output contract (planned)
 
@@ -59,6 +59,8 @@ Each future exercise analyzer will expose `analyze(landmarks, context)` and retu
 
 Events will be published through `src/events.js`. Event payloads are plain objects; subscribers must not mutate them.
 
+G2.1 currently uses `camera:ready`, `camera:error`, `pose:ready`, `pose:result`, `pose:error`, `pose:body-found`, and `pose:body-lost`. A `pose:result` payload is `{ landmarks, fps, timestampMs }`, where `landmarks` is the first detected pose or `null`.
+
 | Event | Planned payload | Purpose |
 | --- | --- | --- |
 | `pose:visibility-changed` | `{ visible, reason }` | Show framing guidance or pause analysis |
@@ -73,11 +75,12 @@ Events will be published through `src/events.js`. Event payloads are plain objec
 | Code | Meaning | Expected UI action |
 | --- | --- | --- |
 | `CAMERA_DENIED` | Camera permission was declined | Explain how to allow access and retry |
-| `CAMERA_UNAVAILABLE` | No camera or camera in use | Explain device issue and retry |
+| `NO_CAMERA` | No camera was found | Explain device issue and retry |
+| `CAMERA_ERROR` | Camera could not start for another reason | Explain device issue and retry |
 | `INSECURE_CONTEXT` | Camera API unavailable in current context | Ask user to use localhost or HTTPS |
-| `MODEL_LOAD_FAILED` | Pose model could not initialize | Offer retry |
+| `MODEL_FAILED` | Pose model could not initialize or inference stopped | Offer retry |
 | `LOW_VISIBILITY` | Required body joints are outside the frame or obscured | Pause counting and show positioning guidance |
 | `LOW_LIGHT` | Image quality is too poor for reliable tracking | Pause counting and show lighting guidance |
 | `MULTI_PERSON` | More than one person is in view | Pause counting and request one person in frame |
 
-These are future behavior definitions. G1 does not access the camera, run a model, or detect movement errors.
+G2.1 handles camera and model errors. Movement-specific error states remain planned.

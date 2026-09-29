@@ -1,5 +1,4 @@
-// Small application event bus. Engine events will use the same publish/subscribe
-// interface in later gates; G1 publishes only application state changes.
+// Small application event bus shared by UI, camera, and pose modules.
 const listeners = new Map();
 
 export function on(eventName, handler) {
