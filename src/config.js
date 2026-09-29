@@ -19,6 +19,14 @@ export const APP_EVENTS = Object.freeze({
   CALIBRATION_COMPLETE: "calibration:complete",
   CALIBRATION_RESET: "calibration:reset",
   REP: "rep",
+  HINT: "hint",
+  PROGRAM_SELECTED: "program:selected",
+  WORKOUT_START: "workout:start",
+  EXERCISE_START: "exercise:start",
+  EXERCISE_COMPLETE: "exercise:complete",
+  WORKOUT_REST: "workout:rest",
+  WORKOUT_COMPLETE: "workout:complete",
+  WORKOUT_RESET: "workout:reset",
 });
 
 export const INITIAL_STATE = APP_STATES.SPLASH;
@@ -50,6 +58,18 @@ export const CALIBRATION_UP_MIN = 155;
 export const CALIBRATION_UP_MAX = 165;
 export const CALIBRATION_START_OFFSET = 15;
 export const SQUAT_BOTTOM_THRESHOLD = 125;
+export const SQUAT_GOOD_DEPTH = 100;
+export const SQUAT_KNEE_WARN = 0.06;
+export const SQUAT_KNEE_FAIL = 0.12;
+export const SQUAT_LEAN_FAIL_DEG = 55;
+export const SQUAT_FAST_MS = 900;
+export const SQUAT_NOT_UP_MIN = 145;
+export const SQUAT_NOT_UP_MAX = 160;
+export const SQUAT_NOT_UP_MS = 1500;
+export const SQUAT_FORM_SAMPLE_MAX_ANGLE = 140;
+export const HINT_COOLDOWN_MS = 4000;
+export const HINT_MIN_DISPLAY_MS = 1500;
+export const REST_DURATION_SECONDS = 20;
 export const SQUAT_RISING_DELTA = 8;
 export const PHASE_CONFIRM_FRAMES = 3;
 export const MIN_REP_DURATION_MS = 500;

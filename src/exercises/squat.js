@@ -7,16 +7,66 @@ import {
   MIN_REP_DURATION_MS,
   PHASE_CONFIRM_FRAMES,
   SQUAT_BOTTOM_THRESHOLD,
+  SQUAT_FAST_MS,
+  SQUAT_FORM_SAMPLE_MAX_ANGLE,
+  SQUAT_GOOD_DEPTH,
+  SQUAT_KNEE_FAIL,
+  SQUAT_KNEE_WARN,
+  SQUAT_LEAN_FAIL_DEG,
+  SQUAT_NOT_UP_MAX,
+  SQUAT_NOT_UP_MIN,
+  SQUAT_NOT_UP_MS,
   SQUAT_RISING_DELTA,
   TRACKING_LOSS_RESET_MS,
 } from "../config.js";
-import { anglePx } from "../geometry.js";
+import { anglePx, distancePx } from "../geometry.js";
 import { isUsableLandmark, JOINTS } from "../poseQuality.js";
 
 const SIDES = {
   LEFT: [JOINTS.LEFT_SHOULDER, JOINTS.LEFT_HIP, JOINTS.LEFT_KNEE, JOINTS.LEFT_ANKLE],
   RIGHT: [JOINTS.RIGHT_SHOULDER, JOINTS.RIGHT_HIP, JOINTS.RIGHT_KNEE, JOINTS.RIGHT_ANKLE],
 };
+const TOE = { LEFT: 31, RIGHT: 32 };
+const FORM_ERRORS = Object.freeze({
+  SQ_KNEE_TOE: { code: "SQ_KNEE_TOE", severity: "critical" },
+  SQ_LEAN: { code: "SQ_LEAN", severity: "critical" },
+  SQ_SHALLOW: { code: "SQ_SHALLOW", severity: "critical" },
+  SQ_NOT_UP: { code: "SQ_NOT_UP", severity: "minor" },
+  SQ_FAST: { code: "SQ_FAST", severity: "minor" },
+});
+
+function formError(code, side) {
+  const [shoulder, hip, knee, ankle] = SIDES[side];
+  const joints = {
+    SQ_KNEE_TOE: [knee, TOE[side], ankle],
+    SQ_LEAN: [shoulder, hip],
+    SQ_SHALLOW: [hip, knee],
+    SQ_NOT_UP: [hip, knee],
+    SQ_FAST: [],
+  };
+  return { ...FORM_ERRORS[code], joints: joints[code] };
+}
+
+function formMetrics(landmarks, side, width, height, legLength) {
+  const [shoulderIndex, hipIndex, kneeIndex, ankleIndex] = SIDES[side];
+  const shoulder = landmarks[shoulderIndex];
+  const hip = landmarks[hipIndex];
+  const knee = landmarks[kneeIndex];
+  const ankle = landmarks[ankleIndex];
+  const toe = landmarks[TOE[side]];
+  const torsoDx = (shoulder.x - hip.x) * width;
+  const torsoDy = (shoulder.y - hip.y) * height;
+  const lean = Math.atan2(Math.abs(torsoDx), Math.abs(torsoDy)) * 180 / Math.PI;
+  const measuredLeg = distancePx(hip, knee, width, height) +
+    distancePx(knee, ankle, width, height);
+  const scale = Number.isFinite(legLength) && legLength > 0 ? legLength : measuredLeg;
+  // Toe direction supplies the forward sign, independent of camera mirroring or body side.
+  const footDx = isUsableLandmark(toe) ? (toe.x - ankle.x) * width : 0;
+  const kneeOver = Math.abs(footDx) > 0 && scale > 0
+    ? Math.max(0, ((knee.x - toe.x) * width * Math.sign(footDx)) / scale)
+    : null;
+  return { kneeOver, lean };
+}
 
 function sideScore(landmarks, side) {
   const joints = SIDES[side];
@@ -35,6 +85,7 @@ export function createSquat(config = {}) {
 
   let phase = "up";
   let reps = 0;
+  let cleanReps = 0;
   let armed = false;
   let minKneeAngle = null;
   let startedAt = null;
@@ -44,6 +95,18 @@ export function createSquat(config = {}) {
   let candidateStartedAt = null;
   let candidateMinAngle = null;
   let lastValidAt = null;
+  let kneeOver = null;
+  let lean = null;
+  let maxKneeOver = null;
+  let maxLean = null;
+  let kneeWarnFrames = 0;
+  let kneeFailFrames = 0;
+  let leanFailFrames = 0;
+  let kneeWarn = false;
+  let kneeFail = false;
+  let leanFail = false;
+  let notUpSince = null;
+  let notUpDetected = false;
 
   function clearCandidate() {
     phaseCandidate = null;
@@ -59,6 +122,18 @@ export function createSquat(config = {}) {
     startedAt = null;
     lockedSide = null;
     lastValidAt = null;
+    kneeOver = null;
+    lean = null;
+    maxKneeOver = null;
+    maxLean = null;
+    kneeWarnFrames = 0;
+    kneeFailFrames = 0;
+    leanFailFrames = 0;
+    kneeWarn = false;
+    kneeFail = false;
+    leanFail = false;
+    notUpSince = null;
+    notUpDetected = false;
     clearCandidate();
   }
 
@@ -78,17 +153,33 @@ export function createSquat(config = {}) {
     return phaseConfirmFrames >= confirmFrames;
   }
 
-  function result(visible, kneeAngle, selectedSide, upThreshold, downStartThreshold, repEvent = null) {
+  function result(visible, kneeAngle, selectedSide, upThreshold, downStartThreshold,
+    repEvent = null, completedMetrics = null) {
+    const errors = [];
+    if (phase !== "up" && selectedSide) {
+      if (kneeFail) errors.push(formError("SQ_KNEE_TOE", selectedSide));
+      if (leanFail) errors.push(formError("SQ_LEAN", selectedSide));
+      if (notUpDetected) errors.push(formError("SQ_NOT_UP", selectedSide));
+      // A warning-level knee observation uses the same correction without failing the rep.
+      if (kneeWarn && !kneeFail) errors.push({
+        ...formError("SQ_KNEE_TOE", selectedSide), severity: "minor",
+      });
+    }
+    if (repEvent?.errors.length) errors.splice(0, errors.length, ...repEvent.errors);
     return {
       visible,
       phase,
       reps,
-      cleanReps: reps, // No form-error classification exists in G2.3a.
-      errors: [],
+      cleanReps,
+      errors,
       repEvent,
       metrics: {
         kneeAngle,
-        minKneeAngle,
+        minKneeAngle: completedMetrics?.minKneeAngle ?? minKneeAngle,
+        kneeOver,
+        lean,
+        maxKneeOver: completedMetrics?.maxKneeOver ?? maxKneeOver,
+        maxLean: completedMetrics?.maxLean ?? maxLean,
         selectedSide,
         upThreshold,
         downStartThreshold,
@@ -150,7 +241,31 @@ export function createSquat(config = {}) {
       if (lastValidAt !== null && nowMs - lastValidAt >= lossResetMs) cancelCycle();
       lastValidAt = nowMs;
 
+      ({ kneeOver, lean } = formMetrics(
+        landmarks, selectedSide, videoWidth, videoHeight, calibration.legLen,
+      ));
+      if (phase !== "up" && kneeAngle <= SQUAT_FORM_SAMPLE_MAX_ANGLE) {
+        if (kneeOver !== null) {
+          maxKneeOver = Math.max(maxKneeOver ?? 0, kneeOver);
+          kneeWarnFrames = kneeOver > SQUAT_KNEE_WARN ? kneeWarnFrames + 1 : 0;
+          kneeFailFrames = kneeOver > SQUAT_KNEE_FAIL ? kneeFailFrames + 1 : 0;
+          if (kneeWarnFrames >= confirmFrames) kneeWarn = true;
+          if (kneeFailFrames >= confirmFrames) kneeFail = true;
+        } else {
+          kneeWarnFrames = 0;
+          kneeFailFrames = 0;
+        }
+        maxLean = Math.max(maxLean ?? 0, lean);
+        leanFailFrames = lean > SQUAT_LEAN_FAIL_DEG ? leanFailFrames + 1 : 0;
+        if (leanFailFrames >= confirmFrames) leanFail = true;
+      } else {
+        kneeWarnFrames = 0;
+        kneeFailFrames = 0;
+        leanFailFrames = 0;
+      }
+
       let repEvent = null;
+      let completedMetrics = null;
       if (phase === "up") {
         if (!armed) {
           if (confirm("up", kneeAngle >= upThreshold, nowMs, kneeAngle)) {
@@ -185,21 +300,43 @@ export function createSquat(config = {}) {
         }
       } else if (phase === "rising") {
         minKneeAngle = Math.min(minKneeAngle, kneeAngle);
+        if (kneeAngle >= SQUAT_NOT_UP_MIN && kneeAngle <= SQUAT_NOT_UP_MAX) {
+          notUpSince ??= nowMs;
+          if (nowMs - notUpSince > SQUAT_NOT_UP_MS) notUpDetected = true;
+        } else {
+          notUpSince = null;
+        }
         if (confirm("up", kneeAngle >= upThreshold, nowMs, kneeAngle)) {
           const durationMs = nowMs - startedAt;
           const counted = durationMs >= minDurationMs && durationMs <= maxDurationMs &&
             minKneeAngle <= bottomThreshold;
           if (counted) reps += 1;
-          repEvent = { counted, durationMs, minAngle: minKneeAngle };
+          const errors = [];
+          if (kneeFail) errors.push(formError("SQ_KNEE_TOE", selectedSide));
+          if (leanFail) errors.push(formError("SQ_LEAN", selectedSide));
+          if (minKneeAngle > SQUAT_GOOD_DEPTH && minKneeAngle <= bottomThreshold) {
+            errors.push(formError("SQ_SHALLOW", selectedSide));
+          }
+          if (notUpDetected) errors.push(formError("SQ_NOT_UP", selectedSide));
+          if (durationMs < SQUAT_FAST_MS) errors.push(formError("SQ_FAST", selectedSide));
+          if (kneeWarn && !kneeFail) errors.push({
+            ...formError("SQ_KNEE_TOE", selectedSide), severity: "minor",
+          });
+          const clean = counted && !errors.some((error) => error.severity === "critical");
+          if (clean) cleanReps += 1;
+          repEvent = { counted, clean, errors, durationMs, minAngle: minKneeAngle };
+          completedMetrics = { minKneeAngle, maxKneeOver, maxLean };
           cancelCycle(true);
         }
       }
 
-      return result(true, kneeAngle, selectedSide, upThreshold, downStartThreshold, repEvent);
+      return result(true, kneeAngle, selectedSide, upThreshold, downStartThreshold,
+        repEvent, completedMetrics);
     },
     reset() {
       cancelCycle();
       reps = 0;
+      cleanReps = 0;
     },
   };
 }

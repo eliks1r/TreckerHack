@@ -26,7 +26,7 @@ export function clearPose(canvas) {
   canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
 }
 
-export function drawPose(canvas, landmarks, quality) {
+export function drawPose(canvas, landmarks, quality, activeError = null) {
   const context = canvas.getContext("2d");
   context.clearRect(0, 0, canvas.width, canvas.height);
   if (!landmarks || !canvas.width || !canvas.height) return;
@@ -73,4 +73,22 @@ export function drawPose(canvas, landmarks, quality) {
     }
   }
   context.globalAlpha = 1;
+  if (activeError?.joints?.length) {
+    const highlight = activeError.severity === "critical" ? "#FF4D6A" : "#FFC24B";
+    context.fillStyle = highlight;
+    context.strokeStyle = "#0B0E17";
+    context.lineWidth = Math.max(2, canvas.width / 320);
+    context.shadowColor = highlight;
+    context.shadowBlur = 12;
+    for (const index of activeError.joints) {
+      const point = landmarks[index];
+      if (!visible(point)) continue;
+      context.beginPath();
+      context.arc(point.x * canvas.width, point.y * canvas.height,
+        Math.max(8, canvas.width / 75), 0, Math.PI * 2);
+      context.fill();
+      context.stroke();
+    }
+    context.shadowBlur = 0;
+  }
 }

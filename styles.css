@@ -108,12 +108,53 @@ button { font: inherit; cursor: pointer; }
 .squat-start-button:disabled { cursor: not-allowed; opacity: .48; transform: none; box-shadow: none; }
 .squat-panel { width: min(100%, 760px); padding: clamp(18px, 3vw, 28px); border: 1px solid var(--border); background: var(--surface); }
 .squat-panel h2 { margin: 0 0 18px; color: var(--text); font-size: 25px; font-weight: 900; letter-spacing: .12em; }
-.squat-stats { display: grid; grid-template-columns: 1.35fr repeat(3, 1fr); gap: 10px; }
+.squat-stats { display: grid; grid-template-columns: 1.55fr 1fr repeat(3, 1fr); gap: 10px; }
 .squat-stat { display: flex; flex-direction: column; justify-content: space-between; min-height: 112px; padding: 15px; border: 1px solid var(--border); background: var(--background); }
 .squat-stat-label { color: var(--muted); font-family: Consolas, "Courier New", monospace; font-size: 10px; font-weight: 700; letter-spacing: .12em; }
 .squat-stat-value { color: var(--text); font-size: clamp(19px, 2.5vw, 30px); line-height: 1; }
-.squat-reps .squat-stat-value { color: var(--success); font-size: clamp(58px, 6vw, 76px); }
+.squat-reps .squat-stat-value { color: var(--success); font-size: clamp(38px, 4vw, 58px); white-space: nowrap; }
+.squat-clean .squat-stat-value { color: var(--success); font-size: clamp(36px, 4vw, 52px); }
+.form-panel { display: flex; flex-direction: column; gap: 8px; min-height: 106px; margin-top: 16px; padding: 18px; border: 1px solid var(--border); background: var(--background); }
+.form-label { color: var(--muted); font: 700 10px Consolas, "Courier New", monospace; letter-spacing: .14em; }
+.form-title { color: var(--text); font-size: clamp(17px, 2.5vw, 22px); }
+.form-hint { color: var(--muted); font-size: 13px; line-height: 1.4; }
+.form-panel.is-critical { border-color: var(--error); }
+.form-panel.is-critical .form-title { color: var(--error); }
+.form-panel.is-minor { border-color: var(--warning); }
+.form-panel.is-minor .form-title { color: var(--warning); }
+.form-panel.is-positive { border-color: var(--success); }
+.form-panel.is-positive .form-title { color: var(--success); }
 .squat-end-button { width: auto; margin: 16px 0 0; }
+.flow-view { width: min(100%, 960px); padding: clamp(24px, 4vw, 48px); border: 1px solid var(--border); background: var(--surface); }
+.flow-view h2 { margin: 0 0 18px; font-size: clamp(36px, 5vw, 68px); font-weight: 900; line-height: 1; letter-spacing: -.055em; }
+.flow-view .eyebrow { margin-bottom: 20px; }
+.flow-intro, .unavailable-view > p:not(.eyebrow) { max-width: 640px; color: var(--muted); font-size: 16px; line-height: 1.5; }
+.program-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 30px; }
+.program-card { display: flex; flex-direction: column; align-items: flex-start; min-height: 300px; padding: 24px; border: 1px solid var(--border); background: var(--background); color: var(--text); text-align: left; }
+.program-card.is-available { border-color: var(--accent); box-shadow: inset 0 3px var(--accent); }
+.program-card.is-available:hover { border-color: var(--success); background: #182039; }
+.program-card:disabled { cursor: default; opacity: .68; }
+.program-card h3 { margin: 28px 0 14px; font-size: clamp(22px, 2.3vw, 30px); line-height: 1.1; }
+.program-card p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
+.program-card .program-exercises { min-height: 64px; color: var(--text); }
+.program-card .program-meta { margin-top: auto; padding-top: 20px; font: 700 12px Consolas, "Courier New", monospace; letter-spacing: .1em; }
+.program-badge, .flow-kicker { color: var(--muted); font: 700 11px Consolas, "Courier New", monospace; letter-spacing: .13em; text-transform: uppercase; }
+.program-card.is-available .program-badge { color: var(--success); }
+.program-card.is-available .program-meta { color: var(--accent); }
+.workout-heading { display: flex; justify-content: space-between; gap: 16px; width: min(100%, 760px); }
+.rest-view, .unavailable-view, .results-view { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
+.rest-view h2 { color: var(--accent); }
+.rest-completed, .rest-next, .results-program { margin: 0 0 10px; font-size: clamp(22px, 3vw, 34px); font-weight: 800; }
+.rest-next { color: var(--success); }
+.rest-timer { font-size: clamp(70px, 14vw, 150px); line-height: 1; letter-spacing: -.08em; }
+.flow-button { width: min(100%, 440px); margin-top: 20px; }
+.flow-view .secondary-button { margin: 10px 0 0; }
+.results-exercises { width: 100%; margin: 10px 0; }
+.result-row { display: flex; justify-content: space-between; gap: 20px; padding: 16px 0; border-bottom: 1px solid var(--border); font-size: 17px; }
+.result-row strong { color: var(--success); }
+.results-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; width: 100%; }
+.results-stats p { display: flex; flex-direction: column; gap: 12px; min-height: 95px; margin: 0; padding: 16px; border: 1px solid var(--border); color: var(--muted); font: 700 11px Consolas, "Courier New", monospace; letter-spacing: .08em; }
+.results-stats strong { color: var(--text); font: 800 20px Inter, "Segoe UI", Arial, sans-serif; letter-spacing: 0; }
 .camera-status-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; width: min(100%, 760px); min-height: 56px; }
 .camera-status { margin: 0; color: var(--text); font-size: 16px; font-weight: 700; }
 .camera-status.is-error { color: var(--error); }
@@ -127,6 +168,8 @@ button { font: inherit; cursor: pointer; }
 :focus-visible { outline: 3px solid var(--success); outline-offset: 4px; }
 
 @media (max-width: 800px) {
+  .program-cards { grid-template-columns: 1fr; }
+  .program-card { min-height: 220px; }
   .topbar { min-height: 76px; }
   .splash-screen { grid-template-columns: 1fr; gap: 0; min-height: 0; padding: 36px 0 52px; }
   .splash-copy { padding: 22px 0 42px; }
@@ -136,6 +179,8 @@ button { font: inherit; cursor: pointer; }
 }
 
 @media (max-width: 480px) {
+  .results-stats { grid-template-columns: 1fr; }
+  .workout-heading { flex-direction: column; gap: 6px; }
   .brand { font-size: 11px; }.stage-label { font-size: 9px; }
   .splash-copy h1 { font-size: clamp(64px, 17vw, 84px); }
   .primary-button { width: 100%; }

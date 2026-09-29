@@ -1,4 +1,4 @@
-import { APP_EVENTS, APP_STATES, INITIAL_STATE } from "./config.js";
+import { APP_EVENTS, APP_STATES, HINT_COOLDOWN_MS, HINT_MIN_DISPLAY_MS, INITIAL_STATE, REST_DURATION_SECONDS } from "./config.js";
 import { emit, on } from "./events.js";
 import { startCamera, stopCamera } from "./camera.js";
 import { initPose, startPoseLoop, stopPoseLoop, disposePose } from "./pose.js";
@@ -6,6 +6,8 @@ import { clearPose, drawPose, sizePoseCanvas } from "./drawPose.js";
 import { assessPoseQuality } from "./poseQuality.js";
 import { createCalibration } from "./calibration.js";
 import { createExerciseEngine } from "./engine.js";
+import { EXERCISE_NAMES, PROGRAMS } from "./programs.js";
+import { createWorkout } from "./workout.js";
 
 const screens = {
   [APP_STATES.SPLASH]: document.querySelector("#splash-screen"),
@@ -17,8 +19,16 @@ let sessionId = 0;
 let bodyVisible = false;
 let lastView = "UNKNOWN";
 let lastCalibrationState = "WAITING";
-let lastQuality = null;
 let squatMode = false;
+let flowView = "CALIBRATION";
+let sessionCalibration = null;
+let selectedProgram = null;
+let workout = null;
+let restTimerHandle = null;
+let cleanStreak = 0;
+let feedback = null;
+let activeFormError = null;
+const shownHints = new Map();
 const calibration = createCalibration();
 const engine = createExerciseEngine();
 
@@ -29,7 +39,14 @@ const status = document.querySelector("#camera-status");
 const help = document.querySelector("#camera-help");
 const fpsIndicator = document.querySelector("#fps-indicator");
 const cameraFrame = document.querySelector(".camera-frame");
-document.querySelector(".stage-label").textContent = "G2.3a / SQUAT TEST";
+const cameraHeading = document.querySelector(".camera-heading");
+const cameraStatusRow = document.querySelector(".camera-status-row");
+const programsView = document.querySelector("#programs-view");
+const workoutHeading = document.querySelector("#workout-heading");
+const restView = document.querySelector("#rest-view");
+const unavailableView = document.querySelector("#unavailable-view");
+const resultsView = document.querySelector("#results-view");
+document.querySelector(".stage-label").textContent = "TRAINING / DEVELOPMENT";
 
 // Keep the G2.1 markup intact; the calibration readout belongs to this screen.
 const calibrationHud = document.createElement("div");
@@ -56,17 +73,6 @@ progressGroup.append(progressLabel, progressTrack);
 calibrationHud.append(viewIndicator, progressGroup);
 cameraFrame.after(calibrationHud);
 
-const squatAction = document.createElement("div");
-squatAction.className = "squat-action";
-squatAction.hidden = true;
-const startSquatButton = document.createElement("button");
-startSquatButton.className = "primary-button squat-start-button";
-startSquatButton.type = "button";
-startSquatButton.textContent = "START SQUAT TEST";
-startSquatButton.hidden = true;
-squatAction.append(startSquatButton);
-calibrationHud.after(squatAction);
-
 const squatPanel = document.createElement("section");
 squatPanel.className = "squat-panel";
 squatPanel.setAttribute("aria-label", "Squat repetition counter");
@@ -91,15 +97,270 @@ function makeSquatStat(label, initialValue, className = "") {
 }
 
 const repValue = makeSquatStat("REPS", "0", "squat-reps");
+const cleanValue = makeSquatStat("CLEAN REPS", "0", "squat-clean");
 const phaseValue = makeSquatStat("PHASE", "UP");
 const angleValue = makeSquatStat("KNEE ANGLE", "—");
 const squatViewValue = makeSquatStat("VIEW", "UNKNOWN");
+const formPanel = document.createElement("div");
+formPanel.className = "form-panel";
+formPanel.setAttribute("aria-live", "polite");
+const formLabel = document.createElement("span");
+formLabel.className = "form-label";
+formLabel.textContent = "FORM CHECK";
+const formTitle = document.createElement("strong");
+formTitle.className = "form-title";
+formTitle.textContent = "Ready for squat";
+const formHint = document.createElement("span");
+formHint.className = "form-hint";
+formPanel.append(formLabel, formTitle, formHint);
 const endSquatButton = document.createElement("button");
 endSquatButton.className = "secondary-button squat-end-button";
 endSquatButton.type = "button";
-endSquatButton.textContent = "← END SQUAT TEST";
-squatPanel.append(squatTitle, squatStats, endSquatButton);
-squatAction.after(squatPanel);
+endSquatButton.textContent = "← RETURN TO PROGRAMS";
+squatPanel.append(squatTitle, squatStats, formPanel, endSquatButton);
+calibrationHud.after(squatPanel);
+
+const corrections = {
+  SQ_KNEE_TOE: ["KNEES TOO FAR FORWARD", "Knees move too far forward — push your hips back"],
+  SQ_LEAN: ["TORSO LEAN", "Torso is leaning too far — keep your chest higher"],
+  SQ_SHALLOW: ["SQUAT DEPTH", "Sit deeper — thighs closer to parallel with the floor"],
+  SQ_NOT_UP: ["STAND FULLY", "Stand fully upright at the top"],
+  SQ_FAST: ["SLOW DOWN", "Slow down — control the descent"],
+};
+const errorOrder = ["SQ_KNEE_TOE", "SQ_LEAN", "SQ_SHALLOW", "SQ_NOT_UP", "SQ_FAST"];
+
+function resetFormFeedback() {
+  cleanStreak = 0;
+  feedback = null;
+  activeFormError = null;
+  shownHints.clear();
+  cleanValue.textContent = "0";
+  formTitle.textContent = "Ready for squat";
+  formHint.textContent = "";
+  formPanel.classList.remove("is-critical", "is-minor", "is-positive");
+}
+
+function renderFormFeedback(errors, quality, nowMs, repEvent) {
+  let chosen = null;
+  if (quality.framing !== "READY") {
+    chosen = { code: quality.framing, title: {
+      NO_BODY: "Stand in front of the camera",
+      PARTIAL_BODY: "Step back so your full body is visible",
+      TOO_CLOSE: "Move farther from the camera",
+    }[quality.framing], severity: "position" };
+  } else if (quality.view !== "SIDE") {
+    chosen = { code: "VIEW", title: "Turn sideways to the camera", severity: "position" };
+  } else {
+    const issue = errorOrder.map((code) => errors.find((error) =>
+      error.code === code && error.severity === "critical")).find(Boolean) ||
+      errorOrder.map((code) => errors.find((error) => error.code === code)).find(Boolean);
+    if (issue) chosen = { ...issue, title: corrections[issue.code][0], hint: corrections[issue.code][1] };
+  }
+
+  if (chosen?.severity === "position") {
+    feedback = { ...chosen, since: nowMs, until: nowMs + HINT_MIN_DISPLAY_MS };
+  } else if (chosen) {
+    const same = feedback?.code === chosen.code;
+    const onCooldown = nowMs - (shownHints.get(chosen.code) ?? -Infinity) < HINT_COOLDOWN_MS;
+    if (same) {
+      feedback.until = Math.max(feedback.until, nowMs + HINT_MIN_DISPLAY_MS);
+      feedback.severity = chosen.severity;
+    } else if (!onCooldown && (!feedback || nowMs >= feedback.until ||
+               feedback.severity === "position" ||
+               (chosen.severity === "critical" && feedback.severity !== "critical"))) {
+      feedback = { ...chosen, since: nowMs, until: nowMs + HINT_MIN_DISPLAY_MS };
+      shownHints.set(chosen.code, nowMs);
+    }
+  } else if (repEvent?.counted) {
+    const title = repEvent.clean
+      ? cleanStreak >= 3 ? "CLEAN!" : "CLEAN REP"
+      : "FORM ISSUE";
+    if (!feedback || nowMs >= feedback.until) {
+      feedback = { code: "REP_RESULT", title, hint: "", severity: repEvent.clean ? "positive" : "minor",
+        since: nowMs, until: nowMs + HINT_MIN_DISPLAY_MS };
+    }
+  } else if (feedback && nowMs >= feedback.until) {
+    feedback = null;
+  }
+
+  activeFormError = feedback?.code === chosen?.code && chosen?.joints?.length ? chosen : null;
+  formTitle.textContent = feedback?.title || "Ready for squat";
+  formHint.textContent = feedback?.hint || "";
+  formPanel.classList.toggle("is-critical", feedback?.severity === "critical");
+  formPanel.classList.toggle("is-minor", feedback?.severity === "minor");
+  formPanel.classList.toggle("is-positive", feedback?.severity === "positive");
+}
+
+function showFlow(next) {
+  flowView = next;
+  cameraHeading.hidden = next !== "CALIBRATION";
+  cameraFrame.hidden = next !== "CALIBRATION" && next !== "WORKOUT";
+  calibrationHud.hidden = next !== "CALIBRATION" && next !== "WORKOUT";
+  cameraStatusRow.hidden = next !== "CALIBRATION" && next !== "WORKOUT";
+  squatPanel.hidden = next !== "WORKOUT";
+  workoutHeading.hidden = next !== "WORKOUT";
+  programsView.hidden = next !== "PROGRAMS";
+  restView.hidden = next !== "REST";
+  unavailableView.hidden = next !== "UNAVAILABLE";
+  resultsView.hidden = next !== "RESULTS";
+}
+
+function renderProgramCards() {
+  const cards = document.querySelector("#program-cards");
+  cards.replaceChildren();
+  for (const program of PROGRAMS) {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = `program-card ${program.developmentAvailable ? "is-available" : ""}`;
+    card.disabled = !program.developmentAvailable;
+    const badge = document.createElement("span");
+    badge.className = "program-badge";
+    badge.textContent = program.developmentAvailable ? "AVAILABLE • DEVELOPMENT" : "COMING SOON";
+    const title = document.createElement("h3");
+    title.textContent = program.name.toUpperCase();
+    const exercises = document.createElement("p");
+    exercises.className = "program-exercises";
+    exercises.textContent = program.exercises.map((item) =>
+      `${EXERCISE_NAMES[item.id]}${item.implemented ? "" : " (coming soon)"}`).join(" · ");
+    const description = document.createElement("p");
+    description.textContent = program.description;
+    const meta = document.createElement("span");
+    meta.className = "program-meta";
+    meta.textContent = `~${program.durationMinutes} MIN · ${program.exercises.length} EXERCISES`;
+    card.append(badge, title, exercises, description, meta);
+    if (program.developmentAvailable) card.addEventListener("click", () => startProgram(program));
+    cards.append(card);
+  }
+}
+
+function clearRestTimer() {
+  if (restTimerHandle !== null) clearInterval(restTimerHandle);
+  restTimerHandle = null;
+}
+
+function showResults() {
+  const state = workout?.getState();
+  if (!state || !selectedProgram) return;
+  document.querySelector("#results-program").textContent = selectedProgram.name;
+  const list = document.querySelector("#results-exercises");
+  list.replaceChildren();
+  for (const item of state.exerciseResults) {
+    const row = document.createElement("div");
+    row.className = "result-row";
+    const name = document.createElement("span");
+    name.textContent = EXERCISE_NAMES[item.exerciseId];
+    const count = document.createElement("strong");
+    count.textContent = `${item.reps} / ${item.targetReps} completed`;
+    row.append(name, count);
+    list.append(row);
+  }
+  document.querySelector("#results-count").textContent =
+    `${state.exerciseResults.length} / ${selectedProgram.exercises.length}`;
+  const seconds = Math.max(0, Math.floor(((state.endedAt ?? Date.now()) - state.startedAt) / 1000));
+  document.querySelector("#results-duration").textContent =
+    `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+  showFlow("RESULTS");
+}
+
+function finishWorkout() {
+  if (!workout) return;
+  clearRestTimer();
+  engine.reset();
+  squatMode = false;
+  const result = workout.finishWorkout();
+  emit(APP_EVENTS.WORKOUT_COMPLETE, result);
+  showResults();
+}
+
+function beginExercise(exercise) {
+  if (!exercise) return;
+  emit(APP_EVENTS.EXERCISE_START, {
+    programId: selectedProgram.id, exerciseId: exercise.id,
+    index: workout.getState().currentExerciseIndex, targetReps: exercise.targetReps,
+  });
+  if (!exercise.implemented) {
+    document.querySelector("#unavailable-title").textContent = EXERCISE_NAMES[exercise.id].toUpperCase();
+    showFlow("UNAVAILABLE");
+    return;
+  }
+  if (!engine.startExercise(exercise.id, sessionCalibration)) {
+    document.querySelector("#unavailable-title").textContent = EXERCISE_NAMES[exercise.id].toUpperCase();
+    showFlow("UNAVAILABLE");
+    return;
+  }
+  squatMode = true;
+  resetFormFeedback();
+  repValue.textContent = `0 / ${exercise.targetReps}`;
+  phaseValue.textContent = "UP";
+  angleValue.textContent = "—";
+  document.querySelector("#workout-program-name").textContent = selectedProgram.name.toUpperCase();
+  document.querySelector("#workout-exercise-number").textContent =
+    `EXERCISE ${workout.getState().currentExerciseIndex + 1} / ${selectedProgram.exercises.length}`;
+  showFlow("WORKOUT");
+  showStatus(lastView === "SIDE" ? "Ready for squat" : "Turn sideways to the camera");
+}
+
+function startProgram(program) {
+  if (!program.developmentAvailable || !sessionCalibration || workout) return;
+  const session = createWorkout(program);
+  if (!session.startWorkout()) return;
+  selectedProgram = program;
+  workout = session;
+  emit(APP_EVENTS.PROGRAM_SELECTED, { programId: program.id });
+  emit(APP_EVENTS.WORKOUT_START, session.getState());
+  beginExercise(session.getCurrentExercise());
+}
+
+function startRest(completed) {
+  const next = selectedProgram.exercises[workout.getState().currentExerciseIndex + 1];
+  document.querySelector("#rest-completed").textContent =
+    `${completed.reps} / ${completed.targetReps} ${EXERCISE_NAMES[completed.exerciseId].toUpperCase()} REPS`;
+  document.querySelector("#rest-next").textContent = EXERCISE_NAMES[next.id].toUpperCase();
+  const endsAt = Date.now() + REST_DURATION_SECONDS * 1000;
+  const tick = () => {
+    document.querySelector("#rest-timer").textContent =
+      String(Math.max(0, Math.ceil((endsAt - Date.now()) / 1000)));
+    if (Date.now() >= endsAt) clearRestTimer();
+  };
+  tick();
+  restTimerHandle = setInterval(tick, 250);
+  showFlow("REST");
+  emit(APP_EVENTS.WORKOUT_REST, {
+    programId: selectedProgram.id, seconds: REST_DURATION_SECONDS,
+    nextExerciseId: next.id,
+  });
+}
+
+function completeExercise(result) {
+  const completed = workout?.completeCurrentExercise(result);
+  if (!completed) return;
+  engine.reset();
+  squatMode = false;
+  activeFormError = null;
+  emit(APP_EVENTS.EXERCISE_COMPLETE, {
+    programId: selectedProgram.id, exerciseId: completed.exerciseId,
+    reps: completed.reps, targetReps: completed.targetReps,
+  });
+  if (workout.getState().status === "REST") startRest(completed);
+  else finishWorkout();
+}
+
+function returnToPrograms() {
+  clearRestTimer();
+  engine.reset();
+  squatMode = false;
+  resetFormFeedback();
+  if (workout) {
+    const programId = selectedProgram.id;
+    workout.resetWorkout();
+    emit(APP_EVENTS.WORKOUT_RESET, { programId });
+  }
+  workout = null;
+  selectedProgram = null;
+  showFlow(sessionCalibration ? "PROGRAMS" : "CALIBRATION");
+}
+
+renderProgramCards();
 
 const errorMessages = {
   CAMERA_DENIED: [
@@ -139,10 +400,8 @@ function showProgress(progress, complete = false) {
 }
 
 function showPoseGuidance({ quality, calibrationState, progress, resetReason }) {
+  if (flowView !== "CALIBRATION" && flowView !== "WORKOUT") return;
   showProgress(progress, calibrationState === "CALIBRATED");
-  startSquatButton.hidden = squatMode || calibrationState !== "CALIBRATED";
-  squatAction.hidden = startSquatButton.hidden;
-  startSquatButton.disabled = quality.framing !== "READY" || quality.view !== "SIDE";
 
   if (squatMode && quality.framing === "READY" && quality.view !== "SIDE") {
     showStatus("Turn sideways to the camera");
@@ -159,9 +418,7 @@ function showPoseGuidance({ quality, calibrationState, progress, resetReason }) 
     if (squatMode) {
       showStatus("Ready for squat");
     } else {
-      showStatus("Calibration complete", quality.view === "SIDE"
-        ? "Ready for squat"
-        : "Turn sideways to the camera");
+      showStatus("Calibration complete");
     }
   } else if (calibrationState === "CALIBRATING") {
     showStatus("Calibrating... hold still");
@@ -186,7 +443,7 @@ function renderState(state) {
   }
 
   document.querySelector(".footer span:last-child").textContent =
-    state === APP_STATES.CAMERA ? "G2.3a / CAMERA" : "G2.3a / SPLASH";
+    state === APP_STATES.CAMERA ? "TRAINING / CAMERA" : "TRAINING / SPLASH";
 }
 
 function setState(nextState) {
@@ -208,23 +465,19 @@ on(APP_EVENTS.POSE_VIEW, ({ view }) => {
   viewIndicator.textContent = `VIEW: ${view}`;
   squatViewValue.textContent = view;
 });
-on(APP_EVENTS.REP, ({ rep }) => {
-  repValue.textContent = String(rep);
+on(APP_EVENTS.REP, ({ rep, clean }) => {
+  const target = workout?.getCurrentExercise()?.targetReps;
+  repValue.textContent = target ? `${Math.min(rep, target)} / ${target}` : String(rep);
+  cleanStreak = clean ? cleanStreak + 1 : 0;
 });
 on(APP_EVENTS.POSE_QUALITY, showPoseGuidance);
 on(APP_EVENTS.POSE_RESULT, ({ landmarks, fps, timestampMs }) => {
   const quality = assessPoseQuality(landmarks, video.videoWidth, video.videoHeight);
-  lastQuality = quality;
-  const calibrationStatus = calibration.update(
-    landmarks,
-    quality,
-    timestampMs,
-    video.videoWidth,
-    video.videoHeight,
-  );
+  const calibrationStatus = flowView === "CALIBRATION"
+    ? calibration.update(landmarks, quality, timestampMs, video.videoWidth, video.videoHeight)
+    : { state: "CALIBRATED", progress: 1, calibration: sessionCalibration };
 
   sizePoseCanvas(canvas, video);
-  drawPose(canvas, landmarks, quality);
   fpsIndicator.textContent = fps ? `FPS ${fps}` : "FPS --";
 
   const found = quality.bodyDetected;
@@ -244,12 +497,14 @@ on(APP_EVENTS.POSE_RESULT, ({ landmarks, fps, timestampMs }) => {
     emit(APP_EVENTS.CALIBRATION_PROGRESS, { progress: calibrationStatus.progress });
   } else if (calibrationStatus.state === "CALIBRATED" &&
              lastCalibrationState !== "CALIBRATED") {
+    sessionCalibration = calibrationStatus.calibration;
     emit(APP_EVENTS.CALIBRATION_COMPLETE, calibrationStatus.calibration);
+    if (flowView === "CALIBRATION") showFlow("PROGRAMS");
   }
   lastCalibrationState = calibrationStatus.state;
-  if (squatMode) {
+  if (flowView === "WORKOUT" && squatMode) {
     const squat = engine.process(landmarks, {
-      calibration: calibration.getResult(),
+      calibration: sessionCalibration,
       videoWidth: video.videoWidth,
       videoHeight: video.videoHeight,
       nowMs: timestampMs,
@@ -257,10 +512,16 @@ on(APP_EVENTS.POSE_RESULT, ({ landmarks, fps, timestampMs }) => {
       framing: quality.framing,
     });
     phaseValue.textContent = squat.phase.toUpperCase();
+    cleanValue.textContent = String(squat.cleanReps);
     angleValue.textContent = Number.isFinite(squat.metrics.kneeAngle)
       ? `${Math.round(squat.metrics.kneeAngle)}°`
       : "—";
+    renderFormFeedback(squat.errors, quality, timestampMs, squat.repEvent);
+    if (squat.reps >= workout.getCurrentExercise().targetReps) {
+      completeExercise({ reps: squat.reps, cleanReps: squat.cleanReps });
+    }
   }
+  if (!cameraFrame.hidden) drawPose(canvas, landmarks, quality, squatMode ? activeFormError : null);
   emit(APP_EVENTS.POSE_QUALITY, {
     quality,
     calibrationState: calibrationStatus.state,
@@ -271,17 +532,19 @@ on(APP_EVENTS.POSE_RESULT, ({ landmarks, fps, timestampMs }) => {
 
 async function enterCamera() {
   const thisSession = ++sessionId;
+  clearRestTimer();
   engine.reset();
+  resetFormFeedback();
   squatMode = false;
-  squatPanel.hidden = true;
-  startSquatButton.hidden = true;
-  squatAction.hidden = true;
+  selectedProgram = null;
+  workout = null;
+  sessionCalibration = null;
+  showFlow("CALIBRATION");
   setState(APP_STATES.CAMERA);
   emptyView.hidden = false;
   bodyVisible = false;
   calibration.reset();
   lastCalibrationState = "WAITING";
-  lastQuality = null;
   lastView = "UNKNOWN";
   viewIndicator.textContent = "VIEW: UNKNOWN";
   squatViewValue.textContent = "UNKNOWN";
@@ -321,11 +584,15 @@ async function enterCamera() {
 
 function leaveCamera() {
   sessionId += 1;
+  clearRestTimer();
+  if (workout) emit(APP_EVENTS.WORKOUT_RESET, { programId: selectedProgram.id });
   engine.reset();
+  resetFormFeedback();
   squatMode = false;
-  squatPanel.hidden = true;
-  startSquatButton.hidden = true;
-  squatAction.hidden = true;
+  selectedProgram = null;
+  workout = null;
+  sessionCalibration = null;
+  showFlow("CALIBRATION");
   stopPoseLoop();
   stopCamera();
   disposePose();
@@ -334,7 +601,6 @@ function leaveCamera() {
   bodyVisible = false;
   calibration.reset();
   lastCalibrationState = "WAITING";
-  lastQuality = null;
   lastView = "UNKNOWN";
   viewIndicator.textContent = "VIEW: UNKNOWN";
   squatViewValue.textContent = "UNKNOWN";
@@ -343,38 +609,15 @@ function leaveCamera() {
   setState(APP_STATES.SPLASH);
 }
 
-startSquatButton.addEventListener("click", () => {
-  if (squatMode || lastQuality?.framing !== "READY" || lastView !== "SIDE" ||
-      !engine.startSquat(calibration.getResult())) return;
-  squatMode = true;
-  startSquatButton.hidden = true;
-  squatAction.hidden = true;
-  squatPanel.hidden = false;
-  repValue.textContent = "0";
-  phaseValue.textContent = "UP";
-  angleValue.textContent = "—";
-  squatViewValue.textContent = lastView;
-  showStatus("Ready for squat");
+endSquatButton.addEventListener("click", returnToPrograms);
+document.querySelectorAll(".return-programs-button").forEach((button) =>
+  button.addEventListener("click", returnToPrograms));
+document.querySelector("#next-exercise-button").addEventListener("click", () => {
+  if (workout?.getState().status !== "REST") return;
+  clearRestTimer();
+  beginExercise(workout.nextExercise());
 });
-endSquatButton.addEventListener("click", () => {
-  engine.reset();
-  squatMode = false;
-  squatPanel.hidden = true;
-  startSquatButton.hidden = !calibration.getResult();
-  squatAction.hidden = startSquatButton.hidden;
-  startSquatButton.disabled = lastQuality?.framing !== "READY" || lastView !== "SIDE";
-  if (calibration.getResult()) {
-    showStatus("Calibration complete", lastView === "SIDE"
-      ? "Ready for squat"
-      : "Turn sideways to the camera");
-    (startSquatButton.disabled
-      ? document.querySelector("#back-button")
-      : startSquatButton).focus();
-  } else {
-    showStatus("Hold still for calibration");
-    document.querySelector("#back-button").focus();
-  }
-});
+document.querySelector("#finish-demo-button").addEventListener("click", finishWorkout);
 
 document.querySelector("#start-button").addEventListener("click", enterCamera);
 document.querySelector("#back-button").addEventListener("click", () => {
