@@ -5,18 +5,63 @@ import {
   registerUser,
   loginDemoUser,
   logoutUser,
-  getWorkoutHistory,
-  getUserProgress,
   subscribeApi
 } from "./api.js";
+import { initExerciseLibrary, setExerciseLibraryLanguage } from "./ui/exerciseLibrary.js";
+import { clearAnalytics, initAnalytics, refreshAnalytics, setAnalyticsLanguage } from "./ui/analytics.js";
+import { PROGRAMS } from "./programs.js";
+
+const PROGRAM_UI = {
+  ru: {
+    names: { "full-body": "ВСЁ ТЕЛО", strength: "СИЛОВАЯ", light: "ЛЁГКАЯ" },
+    descriptions: { "full-body": "Сбалансированная тренировка всего тела.", strength: "Короткая силовая программа.", light: "Мягкая тренировка для перерыва." },
+    exercises: { squat: "Приседания", armraise: "Подъём рук", sidebend: "Боковые наклоны", pushup: "Отжимания" },
+    difficulty: { "full-body": "СРЕДНЯЯ", strength: "ВЫШЕ СРЕДНЕЙ", light: "НАЧАЛЬНАЯ" },
+    workout: "ТРЕНИРОВКА", available: "ДОСТУПНА", reps: "повт.", count: "упражнения", minutes: "МИН", level: "СЛОЖНОСТЬ", start: "НАЧАТЬ ТРЕНИРОВКУ"
+  },
+  en: {
+    names: { "full-body": "FULL BODY", strength: "STRENGTH", light: "LIGHT" },
+    descriptions: { "full-body": "Balanced full-body movement.", strength: "A short strength circuit.", light: "A gentle movement break." },
+    exercises: { squat: "Squat", armraise: "Arm Raise", sidebend: "Side Bend", pushup: "Push-up" },
+    difficulty: { "full-body": "INTERMEDIATE", strength: "CHALLENGING", light: "BEGINNER" },
+    workout: "WORKOUT", available: "AVAILABLE", reps: "reps", count: "exercises", minutes: "MIN", level: "DIFFICULTY", start: "START WORKOUT"
+  }
+};
+
+function translateProgramCards(lang) {
+  const t = PROGRAM_UI[lang] || PROGRAM_UI.ru;
+  document.querySelectorAll("#program-cards .program-card").forEach((card, index) => {
+    const program = PROGRAMS[index];
+    if (!program) return;
+    card.querySelector(".program-badge").textContent = `${t.workout} ${program.workoutNumber} · ${t.available}`;
+    card.querySelector("h3").textContent = t.names[program.id];
+    card.querySelector(".program-exercises").replaceChildren(...program.exercises.map(item => {
+      const row = document.createElement("span");
+      row.textContent = `${t.exercises[item.id]} · ${item.targetReps} ${t.reps}`;
+      return row;
+    }));
+    card.querySelector(".program-exercises + p").textContent = t.descriptions[program.id];
+    card.querySelector(".program-meta").textContent = `~${program.durationMinutes} ${t.minutes} · ${program.exercises.length} ${t.count} · ${t.level}: ${t.difficulty[program.id]}`;
+    card.querySelector(".program-action").textContent = t.start;
+  });
+}
 
 // Multilingual Dictionary (RU / EN)
 const TRANSLATIONS = {
   ru: {
     nav_home: "Главная",
+    nav_exercises: "Упражнения",
     nav_guide: "Как пользоваться",
-    nav_workout: "Тренировка",
+    nav_workout: "Тренировки",
     nav_stats: "Аналитика",
+    library_kicker: "ДВИЖЕНИЕ / КАТАЛОГ",
+    library_title: "БИБЛИОТЕКА УПРАЖНЕНИЙ",
+    library_subtitle: "Выберите движение, изучите технику и запустите отслеживание для поддерживаемых упражнений.",
+    analytics_kicker: "ДАННЫЕ / ПРОГРЕСС",
+    analytics_title: "АНАЛИТИКА ТРЕНИРОВОК",
+    analytics_subtitle: "Следите за активностью, количеством повторений и историей тренировок.",
+    workout_preview_kicker: "ИНТЕРФЕЙС / ПРЕВЬЮ",
+    workout_preview_note: "Показатели ниже демонстрируют интерфейс. Реальные результаты появятся после тренировки.",
     sensors_active: "Датчики активны",
     btn_login: "Войти",
     btn_signup: "Регистрация",
@@ -98,6 +143,7 @@ const TRANSLATIONS = {
     prog_kicker: "ПРОГРАММЫ ТРЕНИРОВОК",
     prog_title: "ВЫБЕРИТЕ ТРЕНИРОВКУ",
     prog_intro: "Выберите тренировку, чтобы просмотреть упражнения перед стартом.",
+    ex_next_kicker: "СЛЕДУЮЩЕЕ УПРАЖНЕНИЕ",
     btn_start_exercise: "НАЧАТЬ УПРАЖНЕНИЕ",
     btn_back_programs: "НАЗАД К ПРОГРАММАМ",
     btn_prep_next: "ПОДГОТОВИТЬ СЛЕДУЮЩЕЕ",
@@ -123,9 +169,18 @@ const TRANSLATIONS = {
   },
   en: {
     nav_home: "Home",
+    nav_exercises: "Exercises",
     nav_guide: "How It Works",
-    nav_workout: "Workout",
+    nav_workout: "Workouts",
     nav_stats: "Analytics",
+    library_kicker: "MOVEMENT / CATALOG",
+    library_title: "EXERCISE LIBRARY",
+    library_subtitle: "Choose a movement, learn its technique, and start tracking supported exercises.",
+    analytics_kicker: "DATA / PROGRESS",
+    analytics_title: "WORKOUT ANALYTICS",
+    analytics_subtitle: "Follow your activity, repetition counts, and workout history.",
+    workout_preview_kicker: "INTERFACE / PREVIEW",
+    workout_preview_note: "The figures below preview the interface. Your actual results appear after a workout.",
     sensors_active: "Sensors Active",
     btn_login: "Log In",
     btn_signup: "Sign Up",
@@ -207,6 +262,7 @@ const TRANSLATIONS = {
     prog_kicker: "TRAINING PROGRAMS",
     prog_title: "CHOOSE YOUR WORKOUT",
     prog_intro: "Choose a workout to review its exercises before starting.",
+    ex_next_kicker: "NEXT EXERCISE",
     btn_start_exercise: "START EXERCISE",
     btn_back_programs: "BACK TO WORKOUTS",
     btn_prep_next: "PREPARE NEXT EXERCISE",
@@ -250,6 +306,9 @@ export function applyLanguage(lang) {
       el.textContent = dict[key];
     }
   });
+  setExerciseLibraryLanguage(lang);
+  setAnalyticsLanguage(lang);
+  translateProgramCards(lang);
 
   // Re-sync dynamic auth strings if logged in
   refreshAuthState();
@@ -350,7 +409,6 @@ export async function refreshAuthState() {
     if (profileMenu) profileMenu.hidden = true;
     if (dropdownPanel) dropdownPanel.hidden = true;
   }
-  updateRecentHistoryDisplay();
 }
 
 function initAuthHandlers() {
@@ -524,10 +582,9 @@ function initAuthHandlers() {
 }
 
 /* ==========================================================================
-   WORKOUT HISTORY INTEGRATION
+   WORKOUT SAVE STATUS
    ========================================================================== */
 
-let historyGeneration = 0;
 let profileGeneration = 0;
 let saveState = null;
 
@@ -548,46 +605,6 @@ function renderSaveStatus() {
     : (en ? "Workout was not saved. Results remain on this screen. " : "Тренировка не сохранена. Результат остаётся на экране. ") + (saveState.result?.error ?? "");
 }
 
-async function updateRecentHistoryDisplay() {
-  const generation = ++historyGeneration;
-  const historyList = document.querySelector("#history-items-list");
-  if (!historyList) return;
-  historyList.replaceChildren();
-  const [res, progress] = await Promise.all([getWorkoutHistory(), getUserProgress()]);
-  if (generation !== historyGeneration) return;
-  const en = currentLang === "en";
-  const count = document.querySelector(".history-count");
-  if (count) count.textContent = res.ok ? `${res.data.length} ${en ? "SESSIONS" : "СЕССИЙ"}` : "—";
-  if (!res.ok || !res.data.length) {
-    const empty = document.createElement("p");
-    empty.textContent = res.status === 401 ? (en ? "Log in to view your history." : "Войдите, чтобы увидеть историю.")
-      : !res.ok ? res.error : (en ? "No workouts yet." : "Тренировок пока нет.");
-    historyList.append(empty);
-  }
-  for (const workout of res.ok ? res.data : []) {
-    const item = document.createElement("div");
-    item.className = "history-item";
-    const main = document.createElement("div");
-    main.className = "h-main";
-    const title = document.createElement("strong");
-    title.textContent = `${en ? "Workout" : "Тренировка"} ${workout.workoutNumber}`;
-    const date = document.createElement("small");
-    date.textContent = new Date(workout.finishedAt).toLocaleString(en ? "en-US" : "ru-RU");
-    main.append(title, date);
-    const stats = document.createElement("div");
-    stats.className = "h-stats";
-    const reps = workout.exercises.reduce((sum, e) => sum + e.completedReps, 0);
-    const clean = workout.exercises.reduce((sum, e) => sum + e.cleanReps, 0);
-    stats.textContent = `${reps} ${en ? "reps" : "повт"} · ${clean} ${en ? "clean" : "чистых"} · ${Math.round(workout.durationMs / 1000)} ${en ? "sec" : "сек"}`;
-    item.append(main, stats);
-    historyList.append(item);
-  }
-  let summary = document.querySelector("#user-progress-summary");
-  if (!summary) { summary = document.createElement("p"); summary.id = "user-progress-summary"; historyList.after(summary); }
-  summary.textContent = progress.ok
-    ? `${en ? "Total" : "Всего"}: ${progress.data.totalWorkouts} ${en ? "workouts" : "тренировок"} · ${progress.data.totalReps} ${en ? "reps" : "повт"} · ${Math.round(progress.data.totalDurationMs / 60000)} ${en ? "min" : "мин"}` : "";
-}
-
 /* ==========================================================================
    GENERAL UI & NAVIGATION
    ========================================================================== */
@@ -597,23 +614,27 @@ function initMotionFeatures() {
   document.querySelector("#lang-ru")?.addEventListener("click", () => applyLanguage("ru"));
   document.querySelector("#lang-en")?.addEventListener("click", () => applyLanguage("en"));
   applyLanguage(currentLang);
+  initExerciseLibrary(currentLang);
+  initAnalytics(currentLang);
 
   // Initialize Authentication
   initAuthHandlers();
   subscribeApi(event => {
     if (event.type === "auth-changing") {
+      clearAnalytics();
       ++profileGeneration;
-      ++historyGeneration;
-      document.querySelector("#history-items-list")?.replaceChildren();
-      const summary = document.querySelector("#user-progress-summary");
-      if (summary) summary.textContent = "";
     }
-    if (event.type === "auth") refreshAuthState();
+    if (event.type === "auth") {
+      refreshAuthState();
+      refreshAnalytics();
+    }
     if (event.type === "save") {
       if (event.status !== "pending" && saveState?.id !== event.id) return;
       saveState = event;
       renderSaveStatus();
-      if (event.status === "saved" && !event.stale) updateRecentHistoryDisplay();
+      if (event.status === "saved" && !event.stale) {
+        refreshAnalytics();
+      }
     }
   });
 
@@ -673,6 +694,12 @@ function initMotionFeatures() {
       document.querySelector("#analytics-section")?.scrollIntoView({ behavior: "smooth" });
     });
   }
+  document.querySelectorAll(".topbar-nav .nav-link").forEach(link => {
+    link.addEventListener("click", () => {
+      document.querySelectorAll(".topbar-nav .nav-link").forEach(item => item.classList.remove("is-active"));
+      link.classList.add("is-active");
+    });
+  });
 }
 
 // Start everything once DOM is ready

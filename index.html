@@ -34,8 +34,8 @@
 
             <nav class="topbar-nav" aria-label="Навигация">
               <a href="#hero" class="nav-link is-active" data-i18n="nav_home">Главная</a>
-              <a href="#how-it-works" class="nav-link" data-i18n="nav_guide">Как пользоваться</a>
-              <a href="#workout-section" class="nav-link" id="nav-workout-link" data-i18n="nav_workout">Тренировка</a>
+              <a href="#exercise-library" class="nav-link" data-i18n="nav_exercises">Упражнения</a>
+              <a href="#workout-section" class="nav-link" id="nav-workout-link" data-i18n="nav_workout">Тренировки</a>
               <a href="#analytics-section" class="nav-link" id="nav-stats-link" data-i18n="nav_stats">Аналитика</a>
             </nav>
           </div>
@@ -186,7 +186,20 @@
             </div>
           </section>
 
+          <section id="exercise-library" class="product-section exercise-library" aria-labelledby="library-title">
+            <div class="product-heading">
+              <span class="section-kicker" data-i18n="library_kicker">ДВИЖЕНИЕ / КАТАЛОГ</span>
+              <h2 id="library-title" class="section-heading" data-i18n="library_title">БИБЛИОТЕКА УПРАЖНЕНИЙ</h2>
+              <p class="section-desc" data-i18n="library_subtitle">Выберите движение, изучите технику и запустите отслеживание для поддерживаемых упражнений.</p>
+            </div>
+            <div id="exercise-library-content"></div>
+          </section>
+
           <!-- ================= WORKOUT WORKSPACE GRID ================= -->
+          <div class="workspace-intro">
+            <span class="section-kicker" data-i18n="workout_preview_kicker">ИНТЕРФЕЙС / ПРЕВЬЮ</span>
+            <p data-i18n="workout_preview_note">Показатели ниже демонстрируют интерфейс. Реальные результаты появятся после тренировки.</p>
+          </div>
           <div class="workspace-grid" id="workout-section">
             <!-- LEFT MAIN CARD: WORKOUT VIEWPORT PREVIEW -->
             <article class="glass-card tracker-main-card">
@@ -369,145 +382,21 @@
             </div>
           </div>
 
-          <!-- ================= BOTTOM ROW: GLASSMORPHISM ANALYTICS ================= -->
-          <div class="bottom-analytics-grid" id="analytics-section">
-            <!-- Weekly Activity Bar Chart Card -->
-            <article class="glass-card card-weekly">
-              <div class="weekly-header">
-                <div>
-                  <h3 class="weekly-title" data-i18n="weekly_title">АКТИВНОСТЬ ЗА НЕДЕЛЮ</h3>
-                  <span class="weekly-sub" data-i18n="weekly_sub">Суммарный объем повторений</span>
-                </div>
-                <span class="record-badge" data-i18n="weekly_record">Чт: 120 повт (Рекорд)</span>
-              </div>
-
-              <!-- Bar Chart with Lime Thursday Highlight -->
-              <div class="weekly-chart">
-                <div class="chart-col">
-                  <div class="cbar" style="--ch: 45px"></div>
-                  <span class="cday" data-i18n="day_mon">Пн</span>
-                </div>
-                <div class="chart-col">
-                  <div class="cbar" style="--ch: 65px"></div>
-                  <span class="cday" data-i18n="day_tue">Вт</span>
-                </div>
-                <div class="chart-col">
-                  <div class="cbar" style="--ch: 30px"></div>
-                  <span class="cday" data-i18n="day_wed">Ср</span>
-                </div>
-                <div class="chart-col is-record">
-                  <span class="record-bubble">120</span>
-                  <div class="cbar cbar-lime" style="--ch: 110px"></div>
-                  <span class="cday cday-active" data-i18n="day_thu">Чт</span>
-                </div>
-                <div class="chart-col">
-                  <div class="cbar" style="--ch: 75px"></div>
-                  <span class="cday" data-i18n="day_fri">Пт</span>
-                </div>
-                <div class="chart-col">
-                  <div class="cbar" style="--ch: 85px"></div>
-                  <span class="cday" data-i18n="day_sat">Сб</span>
-                </div>
-                <div class="chart-col">
-                  <div class="cbar cbar-red" style="--ch: 55px"></div>
-                  <span class="cday" data-i18n="day_sun">Вс</span>
-                </div>
-              </div>
-            </article>
-
-            <!-- Workout History List Card -->
-            <article class="glass-card card-history">
-              <div class="history-header">
-                <h3 class="history-title" data-i18n="history_title">ИСТОРИЯ ТРЕНИРОВОК</h3>
-                <span class="history-count" data-i18n="history_count">3 ПОСЛЕДНИХ</span>
-              </div>
-
-              <div class="history-list" id="history-items-list">
-                <div class="history-item">
-                  <span class="h-icon-check">✓</span>
-                  <div class="h-main">
-                    <strong data-i18n="hist_pushup">Отжимания</strong>
-                    <small>24 Окт • 18:20</small>
-                  </div>
-                  <div class="h-stats">
-                    <span class="h-reps">85 <small data-i18n="unit_reps">повт</small></span>
-                    <span class="h-badge-lime">96% техника</span>
-                  </div>
-                </div>
-
-                <div class="history-item">
-                  <span class="h-icon-check">✓</span>
-                  <div class="h-main">
-                    <strong data-i18n="hist_squat">Приседания</strong>
-                    <small>23 Окт • 22:45</small>
-                  </div>
-                  <div class="h-stats">
-                    <span class="h-reps">110 <small data-i18n="unit_reps">повт</small></span>
-                    <span class="h-badge-lime">99% техника</span>
-                  </div>
-                </div>
-
-                <div class="history-item">
-                  <span class="h-icon-check">✓</span>
-                  <div class="h-main">
-                    <strong data-i18n="hist_pushup">Отжимания</strong>
-                    <small>22 Окт • 14:10</small>
-                  </div>
-                  <div class="h-stats">
-                    <span class="h-reps">65 <small data-i18n="unit_reps">повт</small></span>
-                    <span class="h-badge-lime">92% техника</span>
-                  </div>
-                </div>
-              </div>
-
-              <a href="#workout-section" class="history-link" data-i18n="history_link">СМОТРЕТЬ ВСЮ АНАЛИТИКУ СЕССИЙ →</a>
-            </article>
-
-            <!-- Camera Setup Checklist Card -->
-            <article class="glass-card card-dark-status">
-              <div class="setup-list">
-                <div class="setup-item">
-                  <div class="setup-icon-bubble ic-red">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M1 1l22 22"/>
-                      <path d="M21 21H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3m3-3h6l2 3h4a2 2 0 0 1 2 2v9.34"/>
-                      <circle cx="12" cy="13" r="4"/>
-                    </svg>
-                  </div>
-                  <div class="setup-text">
-                    <strong data-i18n="check_cam_title">Камера отключена?</strong>
-                    <p data-i18n="check_cam_desc">Проверьте доступ к объективу в настройках браузера.</p>
-                  </div>
-                </div>
-
-                <div class="setup-item">
-                  <div class="setup-icon-bubble ic-yellow">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <circle cx="12" cy="7" r="4"/>
-                      <path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/>
-                    </svg>
-                  </div>
-                  <div class="setup-text">
-                    <strong data-i18n="check_body_title">Тело вне кадра?</strong>
-                    <p data-i18n="check_body_desc">Отойдите на шаг назад и поставьте устройство на уровне пояса.</p>
-                  </div>
-                </div>
-              </div>
-
-              <div class="sensors-sync-btn">
-                <span class="sync-dot-lime"></span>
-                <span data-i18n="sensors_ok">СЕНСОРЫ 100% ОК</span>
-                <span class="check-mark">✓</span>
-              </div>
-            </article>
-          </div>
-
           <!-- Compatibility stats container for main.js contract -->
           <div class="splash-stats sr-only" role="list">
             <div class="splash-stat" role="listitem"><strong>4</strong><span>MOVEMENTS</span></div>
             <div class="splash-stat" role="listitem"><strong>3</strong><span>WORKOUTS</span></div>
             <div class="splash-stat" role="listitem"><strong>0</strong><span>VIDEO UPLOADED</span></div>
           </div>
+
+          <section id="analytics-section" class="product-section analytics-dashboard" aria-labelledby="analytics-title">
+            <div class="product-heading">
+              <span class="section-kicker" data-i18n="analytics_kicker">ДАННЫЕ / ПРОГРЕСС</span>
+              <h2 id="analytics-title" class="section-heading" data-i18n="analytics_title">АНАЛИТИКА ТРЕНИРОВОК</h2>
+              <p class="section-desc" data-i18n="analytics_subtitle">Следите за активностью, количеством повторений и историей тренировок.</p>
+            </div>
+            <div id="analytics-content"></div>
+          </section>
         </section>
 
         <!-- ================= CAMERA SCREEN: LIVE MOTION TRACKING ================= -->
