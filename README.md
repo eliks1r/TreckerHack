@@ -2,9 +2,11 @@
 
 Motion Quest is a browser fitness game for the **Admit Hackathon Motion case**. Your body is the controller: the webcam and MediaPipe provide pose landmarks, while our own code smooths them, checks visibility, calibrates the user, and analyzes movements. Video stays on your device; the app does not upload camera frames.
 
-The current motion foundation tracks **Squat, Arm Raise, Side Bend, and Push-up**. Squat has form feedback; the other analyzers currently count complete repetitions. Workout results, rest, and repeat flow are implemented. XP, quests, accounts, and a real backend are outside this foundation.
+The current motion foundation tracks **Squat, Arm Raise, Side Bend, and Push-up**. Squat has form feedback; the other analyzers currently count complete repetitions. Workout results, rest, and repeat flow are implemented. Accounts and PostgreSQL persistence are available through the separate backend; XP and quests are outside this foundation.
 
 ## Run locally
+
+For accounts, saved history and progress, follow [backend/README.md](./backend/README.md). Run `npm ci`, configure `backend/.env`, then generate the Prisma client and apply migrations. Start `npm run dev` and `npm run frontend` from `backend/` in separate terminals; open `http://localhost:8000`. Camera/workout flow can run without backend, but persistence requires authentication and a reachable server/database.
 
 From the repository root:
 
@@ -36,7 +38,7 @@ All three workouts are available. After calibration, select a workout, review it
 
 `camera → MediaPipe landmarks → One Euro smoothing → pose quality/calibration → exercise analyzer → workout controller → app state/events → UI`
 
-MediaPipe provides landmarks. Motion Quest owns all movement analysis. `src/exercises/` contains DOM-free, backend-free analyzers. `src/engine.js` owns one analyzer at a time. `src/programs.js` defines the numbered workouts; `src/workout.js` owns explicit session states and produces JSON results. `src/appState.js` and `src/events.js` expose the frontend integration boundary. `src/api.js` is an async, in-memory mock boundary for a future backend. Camera frames and landmarks never enter workout result data.
+MediaPipe provides landmarks. Motion Quest owns all movement analysis. `src/exercises/` contains DOM-free, backend-free analyzers. `src/engine.js` owns one analyzer at a time. `src/programs.js` defines the numbered workouts; `src/workout.js` owns explicit session states and produces JSON results. `src/appState.js` and `src/events.js` expose the frontend integration boundary. `src/api.js` is the async HTTP boundary to Express/PostgreSQL; network failures do not block Results. Camera frames and landmarks never enter workout result data.
 
 See [CONTRACT.md](./CONTRACT.md) for states, analyzer outputs, events, and result shape. See [INTEGRATION.md](./INTEGRATION.md) for frontend and backend teammate guidance.
 

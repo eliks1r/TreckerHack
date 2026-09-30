@@ -5,7 +5,9 @@ import {
   registerUser,
   loginDemoUser,
   logoutUser,
-  getWorkoutHistory
+  getWorkoutHistory,
+  getUserProgress,
+  subscribeApi
 } from "./api.js";
 
 // Multilingual Dictionary (RU / EN)
@@ -251,6 +253,7 @@ export function applyLanguage(lang) {
 
   // Re-sync dynamic auth strings if logged in
   refreshAuthState();
+  renderSaveStatus();
 }
 
 /* ==========================================================================
@@ -320,7 +323,9 @@ export function closeAuthModal() {
 }
 
 export async function refreshAuthState() {
+  const generation = ++profileGeneration;
   const res = await getCurrentUser();
+  if (generation !== profileGeneration) return;
   const authButtons = document.querySelector("#auth-buttons-group");
   const profileMenu = document.querySelector("#user-profile-menu");
   const displayName = document.querySelector("#user-display-name");
@@ -338,13 +343,14 @@ export async function refreshAuthState() {
     if (displayName) displayName.textContent = firstName;
     if (dropdownName) dropdownName.textContent = user.name;
     if (dropdownEmail) dropdownEmail.textContent = user.email;
-    if (dropdownLevel) dropdownLevel.textContent = user.level || (currentLang === "en" ? "PRO Athlete" : "PRO Атлет");
+    if (dropdownLevel) dropdownLevel.textContent = currentLang === "en" ? "Athlete" : "Атлет";
     if (avatarImg && user.avatar) avatarImg.src = user.avatar;
   } else {
     if (authButtons) authButtons.hidden = false;
     if (profileMenu) profileMenu.hidden = true;
     if (dropdownPanel) dropdownPanel.hidden = true;
   }
+  updateRecentHistoryDisplay();
 }
 
 function initAuthHandlers() {
@@ -476,19 +482,20 @@ function initAuthHandlers() {
     const res = await loginDemoUser();
     if (res.ok) {
       showAuthAlert(
-        currentLang === "en" ? "✓ Logged in as Demo Athlete (Alexey Volkov)!" : "✓ Вход выполнен: Александр Волков (PRO)!",
+        currentLang === "en" ? "✓ Demo account ready!" : "✓ Демо-аккаунт готов!",
         "success"
       );
       setTimeout(() => {
         closeAuthModal();
         refreshAuthState();
       }, 350);
-    }
+    } else showAuthAlert(res.error, "error");
   });
 
   // Logout button
   document.querySelector("#btn-logout")?.addEventListener("click", async () => {
-    await logoutUser();
+    const res = await logoutUser();
+    if (!res.ok) { openAuthModal(); showAuthAlert(res.error); return; }
     const dropdownPanel = document.querySelector("#user-dropdown-panel");
     if (dropdownPanel) dropdownPanel.hidden = true;
     refreshAuthState();
@@ -520,41 +527,65 @@ function initAuthHandlers() {
    WORKOUT HISTORY INTEGRATION
    ========================================================================== */
 
+let historyGeneration = 0;
+let profileGeneration = 0;
+let saveState = null;
+
+function renderSaveStatus() {
+  let element = document.querySelector("#workout-save-status");
+  const screen = document.querySelector("#results-view");
+  if (!screen || !saveState) return;
+  if (!element) {
+    element = document.createElement("p");
+    element.id = "workout-save-status";
+    element.setAttribute("role", "status");
+    element.setAttribute("aria-live", "polite");
+    screen.append(element);
+  }
+  const en = currentLang === "en";
+  element.textContent = saveState.status === "pending" ? (en ? "Saving workout…" : "Сохраняем тренировку…")
+    : saveState.status === "saved" ? (en ? "Workout saved." : "Тренировка сохранена.")
+    : (en ? "Workout was not saved. Results remain on this screen. " : "Тренировка не сохранена. Результат остаётся на экране. ") + (saveState.result?.error ?? "");
+}
+
 async function updateRecentHistoryDisplay() {
+  const generation = ++historyGeneration;
   const historyList = document.querySelector("#history-items-list");
   if (!historyList) return;
-
-  const res = await getWorkoutHistory();
-  if (res.ok && res.data && res.data.length > 0) {
-    // If user has actual recorded workouts in localStorage, prepend the latest session
-    const latest = res.data[0];
-    const existingDynamic = historyList.querySelector(".history-item-dynamic");
-    if (existingDynamic) existingDynamic.remove();
-
-    const itemEl = document.createElement("div");
-    itemEl.className = "history-item history-item-dynamic";
-    const dateFormatted = latest.finishedAt
-      ? new Date(latest.finishedAt).toLocaleDateString(currentLang === "en" ? "en-US" : "ru-RU", {
-          day: "numeric",
-          month: "short",
-          hour: "2-digit",
-          minute: "2-digit",
-        })
-      : "Недавно";
-
-    itemEl.innerHTML = `
-      <span class="h-icon-check">⚡</span>
-      <div class="h-main">
-        <strong>${currentLang === "en" ? "Completed Workout" : "Завершенная сессия"}</strong>
-        <small>${dateFormatted}</small>
-      </div>
-      <div class="h-stats">
-        <span class="h-reps">${latest.totalReps ?? 45} <small>${currentLang === "en" ? "reps" : "повт"}</small></span>
-        <span class="h-badge-lime">${latest.accuracy ?? 98}% ${currentLang === "en" ? "accuracy" : "техника"}</span>
-      </div>
-    `;
-    historyList.prepend(itemEl);
+  historyList.replaceChildren();
+  const [res, progress] = await Promise.all([getWorkoutHistory(), getUserProgress()]);
+  if (generation !== historyGeneration) return;
+  const en = currentLang === "en";
+  const count = document.querySelector(".history-count");
+  if (count) count.textContent = res.ok ? `${res.data.length} ${en ? "SESSIONS" : "СЕССИЙ"}` : "—";
+  if (!res.ok || !res.data.length) {
+    const empty = document.createElement("p");
+    empty.textContent = res.status === 401 ? (en ? "Log in to view your history." : "Войдите, чтобы увидеть историю.")
+      : !res.ok ? res.error : (en ? "No workouts yet." : "Тренировок пока нет.");
+    historyList.append(empty);
   }
+  for (const workout of res.ok ? res.data : []) {
+    const item = document.createElement("div");
+    item.className = "history-item";
+    const main = document.createElement("div");
+    main.className = "h-main";
+    const title = document.createElement("strong");
+    title.textContent = `${en ? "Workout" : "Тренировка"} ${workout.workoutNumber}`;
+    const date = document.createElement("small");
+    date.textContent = new Date(workout.finishedAt).toLocaleString(en ? "en-US" : "ru-RU");
+    main.append(title, date);
+    const stats = document.createElement("div");
+    stats.className = "h-stats";
+    const reps = workout.exercises.reduce((sum, e) => sum + e.completedReps, 0);
+    const clean = workout.exercises.reduce((sum, e) => sum + e.cleanReps, 0);
+    stats.textContent = `${reps} ${en ? "reps" : "повт"} · ${clean} ${en ? "clean" : "чистых"} · ${Math.round(workout.durationMs / 1000)} ${en ? "sec" : "сек"}`;
+    item.append(main, stats);
+    historyList.append(item);
+  }
+  let summary = document.querySelector("#user-progress-summary");
+  if (!summary) { summary = document.createElement("p"); summary.id = "user-progress-summary"; historyList.after(summary); }
+  summary.textContent = progress.ok
+    ? `${en ? "Total" : "Всего"}: ${progress.data.totalWorkouts} ${en ? "workouts" : "тренировок"} · ${progress.data.totalReps} ${en ? "reps" : "повт"} · ${Math.round(progress.data.totalDurationMs / 60000)} ${en ? "min" : "мин"}` : "";
 }
 
 /* ==========================================================================
@@ -569,8 +600,22 @@ function initMotionFeatures() {
 
   // Initialize Authentication
   initAuthHandlers();
-  refreshAuthState();
-  updateRecentHistoryDisplay();
+  subscribeApi(event => {
+    if (event.type === "auth-changing") {
+      ++profileGeneration;
+      ++historyGeneration;
+      document.querySelector("#history-items-list")?.replaceChildren();
+      const summary = document.querySelector("#user-progress-summary");
+      if (summary) summary.textContent = "";
+    }
+    if (event.type === "auth") refreshAuthState();
+    if (event.type === "save") {
+      if (event.status !== "pending" && saveState?.id !== event.id) return;
+      saveState = event;
+      renderSaveStatus();
+      if (event.status === "saved" && !event.stale) updateRecentHistoryDisplay();
+    }
+  });
 
   // Exercise tabs (Отжимания / Приседания) with non-repeating photos
   const tabs = document.querySelectorAll(".ex-tab");
