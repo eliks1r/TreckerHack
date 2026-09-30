@@ -1,0 +1,89 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  displayName  String   @map("display_name")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  sessions     AuthSession[]
+  workouts     WorkoutSession[]
+  progress     UserProgress?
+  @@map("users")
+}
+
+model AuthSession {
+  id        String @id @default(uuid()) @db.Uuid
+  userId    String @map("user_id") @db.Uuid
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
+  @@map("auth_sessions")
+}
+
+model WorkoutSession {
+  id            String @id @default(uuid()) @db.Uuid
+  resultId      String @map("result_id")
+  payloadHash   String @map("payload_hash")
+  userId        String @map("user_id") @db.Uuid
+  workoutNumber Int @map("workout_number")
+  programId     String @map("program_id")
+  startedAt     DateTime @map("started_at") @db.Timestamptz(3)
+  finishedAt    DateTime @map("finished_at") @db.Timestamptz(3)
+  durationMs    BigInt @map("duration_ms")
+  completed     Boolean
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  user          User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exercises     ExerciseResult[]
+  @@unique([userId, resultId])
+  @@index([userId, finishedAt])
+  @@map("workout_sessions")
+}
+
+model ExerciseResult {
+  id               String @id @default(uuid()) @db.Uuid
+  workoutSessionId String @map("workout_session_id") @db.Uuid
+  exerciseId       String @map("exercise_id")
+  orderIndex       Int @map("order_index")
+  targetReps       Int @map("target_reps")
+  completedReps    Int @map("completed_reps")
+  cleanReps        Int @map("clean_reps")
+  durationMs       BigInt @map("duration_ms")
+  workout          WorkoutSession @relation(fields: [workoutSessionId], references: [id], onDelete: Cascade)
+  errors           ExerciseError[]
+  @@unique([workoutSessionId, orderIndex])
+  @@map("exercise_results")
+}
+
+model ExerciseError {
+  id               String @id @default(uuid()) @db.Uuid
+  exerciseResultId String @map("exercise_result_id") @db.Uuid
+  orderIndex       Int @map("order_index")
+  errorCode        String @map("error_code")
+  rep              Int
+  severity         String
+  count            Int @default(1)
+  exercise         ExerciseResult @relation(fields: [exerciseResultId], references: [id], onDelete: Cascade)
+  @@unique([exerciseResultId, orderIndex])
+  @@map("exercise_errors")
+}
+
+model UserProgress {
+  userId          String @id @map("user_id") @db.Uuid
+  totalWorkouts   Int @default(0) @map("total_workouts")
+  totalReps       BigInt @default(0) @map("total_reps")
+  totalDurationMs BigInt @default(0) @map("total_duration_ms")
+  lastWorkoutAt   DateTime? @map("last_workout_at") @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user            User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@map("user_progress")
+}

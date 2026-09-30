@@ -1,134 +1,610 @@
 <!doctype html>
-<html lang="en">
+<html lang="ru">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#0B0E17" />
-    <meta name="description" content="Motion Quest — your body is the controller." />
-    <title>Motion Quest</title>
+    <meta name="theme-color" content="#120407" />
+    <meta name="description" content="MOTION TRACKER — отслеживание движений и подсчёт повторений через веб-камеру прямо на вашем устройстве." />
+    <title>MOTION TRACKER — Каждое повторение — прогресс</title>
+    <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="18" fill="%23170508"/><path d="M16 46 L24 18 L32 34 L40 18 L48 46" fill="none" stroke="%23D4FF00" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/></svg>' />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Oswald:wght@600;700;800;900&family=JetBrains+Mono:wght@600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="./styles.css" />
     <script type="module" src="./src/main.js"></script>
+    <script type="module" src="./src/ui3d.js"></script>
   </head>
   <body>
-    <main class="app-shell">
-      <header class="topbar" aria-label="Application header">
-        <a class="brand" href="./index.html" aria-label="Motion Quest home">
-          <span class="brand-mark" aria-hidden="true">M<span class="brand-spark">✦</span></span>
-          <span>MOTION QUEST</span>
-        </a>
-        <span class="stage-label">G2.1 / POSE TRACKING</span>
-      </header>
+    <div class="motion-viewport">
+      <main class="app-shell">
+        <!-- ================= TOPBAR ================= -->
+        <header class="topbar" aria-label="Шапка приложения">
+          <div class="topbar-left">
+            <a class="brand" href="./index.html" aria-label="MOTION TRACKER">
+              <!-- Custom Modern SVG Logo for Motion Tracker -->
+              <svg class="brand-logo-svg" width="34" height="34" viewBox="0 0 40 40" fill="none">
+                <rect width="40" height="40" rx="12" fill="#240A10" stroke="rgba(255,255,255,0.12)" stroke-width="1.5"/>
+                <path d="M10 29 L16 11 L20 22 L24 11 L30 29" stroke="#D4FF00" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <circle cx="20" cy="22" r="2.5" fill="#FFFFFF"/>
+                <circle cx="16" cy="11" r="2" fill="#D4FF00"/>
+                <circle cx="24" cy="11" r="2" fill="#D4FF00"/>
+              </svg>
+              <span class="brand-name">MOTION<span class="brand-sub">TRACKER</span></span>
+            </a>
 
-      <section id="splash-screen" class="screen splash-screen" aria-labelledby="splash-title">
-        <div class="splash-copy">
-          <p class="eyebrow"><span class="status-dot" aria-hidden="true"></span> MOVE TO PLAY</p>
-          <h1 id="splash-title">MOTION<br /><span>QUEST</span></h1>
-          <p class="tagline">Your body is the controller.</p>
-          <button id="start-button" class="primary-button" type="button">
-            <span>START</span>
-            <span class="button-arrow" aria-hidden="true">↗</span>
+            <nav class="topbar-nav" aria-label="Навигация">
+              <a href="#hero" class="nav-link is-active" data-i18n="nav_home">Главная</a>
+              <a href="#exercise-library" class="nav-link" data-i18n="nav_exercises">Упражнения</a>
+              <a href="#workout-section" class="nav-link" id="nav-workout-link" data-i18n="nav_workout">Тренировки</a>
+              <a href="#analytics-section" class="nav-link" id="nav-stats-link" data-i18n="nav_stats">Аналитика</a>
+            </nav>
+          </div>
+
+          <div class="topbar-right">
+            <!-- Language Switcher (RU / EN) -->
+            <div class="lang-switch-wrap" role="group" aria-label="Выбор языка">
+              <button class="lang-btn is-active" id="lang-ru" type="button">RU</button>
+              <span class="lang-divider">/</span>
+              <button class="lang-btn" id="lang-en" type="button">EN</button>
+            </div>
+
+            <div class="sync-badge">
+              <span class="sync-pulse" aria-hidden="true"></span>
+              <span class="sync-text"><strong class="sync-tag">LIVE SYNC</strong> <span data-i18n="sensors_active">Датчики активны</span></span>
+            </div>
+
+            <!-- Authentication Widget (Войти / Регистрация / Профиль) -->
+            <div class="auth-topbar-area" id="auth-topbar-area">
+              <!-- Default state when logged out -->
+              <div class="auth-buttons-group" id="auth-buttons-group">
+                <button class="btn-auth-signin" id="btn-open-login" type="button" data-i18n="btn_login">Войти</button>
+                <button class="btn-auth-signup" id="btn-open-signup" type="button" data-i18n="btn_signup">Регистрация</button>
+              </div>
+
+              <!-- State when logged in (hidden by default) -->
+              <div class="user-profile-menu" id="user-profile-menu" hidden>
+                <button class="user-profile-btn" id="user-profile-btn" type="button" aria-expanded="false" aria-haspopup="true">
+                  <div class="user-avatar-wrap">
+                    <img id="user-avatar-img" src="./assets/athlete_portrait.jpg" alt="Профиль" class="user-avatar" />
+                  </div>
+                  <span class="user-display-name" id="user-display-name">Атлет</span>
+                  <span class="user-chevron">▼</span>
+                </button>
+
+                <!-- Profile Glass Dropdown -->
+                <div class="user-dropdown-panel glass-card" id="user-dropdown-panel" hidden>
+                  <div class="dropdown-user-info">
+                    <strong id="dropdown-name">Александр Волков</strong>
+                    <span id="dropdown-email">alex@motion.fit</span>
+                    <span class="user-level-badge" id="dropdown-level">PRO Атлет</span>
+                  </div>
+                  <div class="dropdown-divider"></div>
+                  <button class="dropdown-logout-btn" id="btn-logout" type="button">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                      <polyline points="16 17 21 12 16 7"/>
+                      <line x1="21" y1="12" x2="9" y2="12"/>
+                    </svg>
+                    <span data-i18n="btn_logout">Выйти из аккаунта</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <span class="stage-label" hidden>TRAINING / PROGRAMS</span>
+          </div>
+        </header>
+
+        <!-- ================= SPLASH SCREEN (Main Dashboard) ================= -->
+        <section id="splash-screen" class="screen splash-screen" aria-labelledby="hero-title">
+          <!-- HERO BANNER -->
+          <section class="hero-banner" id="hero">
+            <div class="hero-content">
+              <span class="hero-badge">
+                <span class="dot-lime" aria-hidden="true"></span>
+                <span data-i18n="hero_badge">MOTION TRACKER 2.0</span>
+              </span>
+              <h1 id="hero-title" class="hero-headline">
+                <span data-i18n="hero_h1_1">КАЖДОЕ</span><br />
+                <span data-i18n="hero_h1_2">ПОВТОРЕНИЕ —</span><br />
+                <span class="text-lime" data-i18n="hero_h1_3">ПРОГРЕСС.</span>
+              </h1>
+              <p class="hero-subtext" data-i18n="hero_sub">
+                Система отслеживает движения через веб-камеру и автоматически считает повторения прямо на вашем устройстве.
+              </p>
+              <div class="hero-actions">
+                <button id="start-button" class="btn-primary-lime" type="button">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                    <polygon points="5 3 19 12 5 21 5 3"/>
+                  </svg>
+                  <span data-i18n="btn_start_training">НАЧАТЬ ТРЕНИРОВКУ</span>
+                </button>
+                <button id="btn-calibrate-quick" class="btn-glass" type="button">
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                    <circle cx="12" cy="12" r="3"/>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                  </svg>
+                  <span data-i18n="btn_calibrate">КАЛИБРОВКА КАМЕРЫ</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="hero-image-wrap">
+              <img src="./assets/motion_hero_pushup.jpg" alt="Атлет выполняет отжимания" class="hero-image" />
+              <div class="hero-glass-overlay">
+                <div class="hero-stat-pill">
+                  <span class="pill-dot"></span>
+                  <span data-i18n="hero_live_stat">33 ТОЧКИ СУСТАВОВ • 60 FPS</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ================= HOW IT WORKS (Кратко и понятно) ================= -->
+          <section class="how-it-works-section" id="how-it-works">
+            <div class="section-title-wrap">
+              <span class="section-kicker" data-i18n="guide_kicker">ИНСТРУКЦИЯ</span>
+              <h2 class="section-heading" data-i18n="guide_title">КАК ЭТО РАБОТАЕТ</h2>
+              <p class="section-desc" data-i18n="guide_desc">Всего 3 простых шага, чтобы начать тренироваться с умным контроллером движений:</p>
+            </div>
+
+            <div class="steps-grid">
+              <div class="glass-card step-card">
+                <div class="step-num">01</div>
+                <div class="step-icon">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                    <circle cx="12" cy="13" r="4"/>
+                  </svg>
+                </div>
+                <h3 data-i18n="step1_title">Включите веб-камеру</h3>
+                <p data-i18n="step1_desc">Нажмите «Начать тренировку» и разрешите доступ к камере. Все кадры анализируются прямо на вашем устройстве.</p>
+              </div>
+
+              <div class="glass-card step-card">
+                <div class="step-num">02</div>
+                <div class="step-icon">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="7" r="4"/>
+                    <path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/>
+                  </svg>
+                </div>
+                <h3 data-i18n="step2_title">Отойдите на 1.5–2 метра</h3>
+                <p data-i18n="step2_desc">Поставьте устройство на уровне пояса и отойдите назад, чтобы в объективе было видно всё тело с головы до стоп.</p>
+              </div>
+
+              <div class="glass-card step-card">
+                <div class="step-num">03</div>
+                <div class="step-icon">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                  </svg>
+                </div>
+                <h3 data-i18n="step3_title">Выполняйте упражнение</h3>
+                <p data-i18n="step3_desc">Система отслеживает положение суставов, углы движения и автоматически считает корректные повторения.</p>
+              </div>
+            </div>
+          </section>
+
+          <section id="exercise-library" class="product-section exercise-library" aria-labelledby="library-title">
+            <div class="product-heading">
+              <span class="section-kicker" data-i18n="library_kicker">ДВИЖЕНИЕ / КАТАЛОГ</span>
+              <h2 id="library-title" class="section-heading" data-i18n="library_title">БИБЛИОТЕКА УПРАЖНЕНИЙ</h2>
+              <p class="section-desc" data-i18n="library_subtitle">Выберите движение, изучите технику и запустите отслеживание для поддерживаемых упражнений.</p>
+            </div>
+            <div id="exercise-library-content"></div>
+          </section>
+
+          <!-- ================= WORKOUT WORKSPACE GRID ================= -->
+          <div class="workspace-intro">
+            <span class="section-kicker" data-i18n="workout_preview_kicker">ИНТЕРФЕЙС / ПРЕВЬЮ</span>
+            <p data-i18n="workout_preview_note">Показатели ниже демонстрируют интерфейс. Реальные результаты появятся после тренировки.</p>
+          </div>
+          <div class="workspace-grid" id="workout-section">
+            <!-- LEFT MAIN CARD: WORKOUT VIEWPORT PREVIEW -->
+            <article class="glass-card tracker-main-card">
+              <div class="tracker-topbar">
+                <div class="exercise-tabs">
+                  <button class="ex-tab is-active" type="button" data-exercise="pushup" data-i18n="tab_pushup">Отжимания</button>
+                  <button class="ex-tab" type="button" data-exercise="squat" data-i18n="tab_squat">Приседания</button>
+                </div>
+                <div class="tracker-status-chips">
+                  <span class="chip-status-lime">
+                    <span class="dot-lime"></span> <span data-i18n="body_in_frame">ТЕЛО В КАДРЕ</span>
+                  </span>
+                  <span class="chip-accuracy">
+                    <span data-i18n="form_accuracy">Точность формы:</span> <strong>96%</strong>
+                  </span>
+                </div>
+              </div>
+
+              <!-- Interactive Cybernetic Scanner Frame -->
+              <div class="preview-viewport">
+                <img id="preview-exercise-img" src="./assets/athlete_squat_motion.jpg" alt="Упражнение" class="preview-bg-img" />
+                
+                <!-- SVG Kinematic Wireframe Overlay -->
+                <svg class="kinematic-svg" viewBox="0 0 600 340">
+                  <defs>
+                    <filter id="neonGlow" x="-30%" y="-30%" width="160%" height="160%">
+                      <feDropShadow dx="0" dy="0" stdDeviation="4" flood-color="#D4FF00" flood-opacity="0.85"/>
+                    </filter>
+                  </defs>
+
+                  <!-- Bones lines -->
+                  <line x1="300" y1="130" x2="300" y2="200" stroke="#D4FF00" stroke-width="3" filter="url(#neonGlow)"/>
+                  <line x1="300" y1="200" x2="260" y2="250" stroke="#D4FF00" stroke-width="3.5" filter="url(#neonGlow)"/>
+                  <line x1="300" y1="200" x2="340" y2="250" stroke="#D4FF00" stroke-width="3.5" filter="url(#neonGlow)"/>
+                  <line x1="260" y1="250" x2="255" y2="305" stroke="#D4FF00" stroke-width="3.5" filter="url(#neonGlow)"/>
+                  <line x1="340" y1="250" x2="345" y2="305" stroke="#D4FF00" stroke-width="3.5" filter="url(#neonGlow)"/>
+                  <line x1="300" y1="130" x2="240" y2="175" stroke="#D4FF00" stroke-width="3" filter="url(#neonGlow)"/>
+                  <line x1="300" y1="130" x2="360" y2="175" stroke="#D4FF00" stroke-width="3" filter="url(#neonGlow)"/>
+
+                  <!-- Joint nodes -->
+                  <circle cx="300" cy="130" r="7" fill="#D4FF00" stroke="#111111" stroke-width="2"/>
+                  <circle cx="300" cy="200" r="6" fill="#FFFFFF" stroke="#D4FF00" stroke-width="2"/>
+                  <circle cx="260" cy="250" r="6.5" fill="#FFFFFF" stroke="#D4FF00" stroke-width="2"/>
+                  <circle cx="340" cy="250" r="6.5" fill="#FFFFFF" stroke="#D4FF00" stroke-width="2"/>
+                  <circle cx="255" cy="305" r="5" fill="#D4FF00"/>
+                  <circle cx="345" cy="305" r="5" fill="#D4FF00"/>
+                  <circle cx="240" cy="175" r="5" fill="#D4FF00"/>
+                  <circle cx="360" cy="175" r="5" fill="#D4FF00"/>
+
+                  <!-- Head circle -->
+                  <circle cx="300" cy="95" r="15" fill="none" stroke="#D4FF00" stroke-width="2" stroke-dasharray="3 3"/>
+
+                  <!-- Angle Callout -->
+                  <g transform="translate(355, 235)">
+                    <rect x="0" y="0" width="50" height="22" rx="11" fill="rgba(17,17,17,0.9)" stroke="#D4FF00" stroke-width="1.2"/>
+                    <text x="25" y="15" font-family="'JetBrains Mono', monospace" font-size="11.5" font-weight="700" fill="#D4FF00" text-anchor="middle">89.4°</text>
+                  </g>
+                </svg>
+
+                <div class="viewport-hud-top">
+                  <span class="hud-fps-badge">60 FPS HD</span>
+                </div>
+
+                <div class="viewport-hud-bottom">
+                  <div class="kinematic-strip">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                    </svg>
+                    <span data-i18n="kinematic_strip">Кинематическая модель v1.4 | Задержка: 12мс</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Clean Single CTA -->
+              <div class="tracker-launch-row">
+                <div class="tracker-notice">
+                  <span class="notice-dot"></span>
+                  <span class="notice-text" data-i18n="notice_ready">Оптимальная видимость • Готов к калибровке</span>
+                  <span class="notice-latency">LATENCY: 12ms</span>
+                </div>
+
+                <button class="btn-primary-lime btn-workout-launch" id="btn-quick-start" type="button">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <polygon points="5 3 19 12 5 21 5 3"/>
+                  </svg>
+                  <span data-i18n="btn_launch_camera">ЗАПУСТИТЬ ТРЕНИРОВКУ ПО КАМЕРЕ</span>
+                </button>
+              </div>
+            </article>
+
+            <!-- RIGHT COLUMN: STATS STACK -->
+            <div class="stats-column">
+              <!-- Reps Hero Card -->
+              <article class="glass-card card-reps">
+                <div class="reps-top">
+                  <div class="reps-label-group">
+                    <span class="stat-caption" data-i18n="stat_reps">ПОВТОРЕНИЯ</span>
+                    <div class="reps-number-row">
+                      <strong class="reps-giant-val" id="reps-display-val">24</strong>
+                      <span class="reps-unit" data-i18n="unit_reps">ПОВТ</span>
+                    </div>
+                    <span class="reps-subtext"><span data-i18n="set_num">Текущий подход:</span> <strong>№3</strong></span>
+                  </div>
+
+                  <div class="reps-right-badge">
+                    <span class="badge-motion-active">
+                      <span class="dot-green"></span> <span data-i18n="motion_in_progress">ИДЁТ ДВИЖЕНИЕ</span>
+                    </span>
+                    <div class="motion-phase-wrap">
+                      <span class="phase-label" data-i18n="phase_label">ФАЗА ДВИЖЕНИЯ:</span>
+                      <strong class="phase-val" id="phase-display-val">Эксцентрик</strong>
+                      <span class="phase-speed" data-i18n="phase_speed">Скорость: 0.72 м/с</span>
+                    </div>
+                  </div>
+                </div>
+              </article>
+
+              <!-- Sets & Time Split Card -->
+              <article class="glass-card card-sets-time">
+                <div class="split-sets">
+                  <div class="sets-header">
+                    <span class="stat-caption" data-i18n="stat_sets">ПОДХОДЫ</span>
+                  </div>
+                  <div class="sets-val-row">
+                    <strong>3</strong><small>/ 4</small>
+                  </div>
+                  <div class="sets-bars">
+                    <span class="sbar active"></span>
+                    <span class="sbar active"></span>
+                    <span class="sbar active"></span>
+                    <span class="sbar"></span>
+                  </div>
+                </div>
+
+                <div class="split-divider"></div>
+
+                <div class="split-time">
+                  <div class="time-header">
+                    <span class="stat-caption" data-i18n="stat_time">ВРЕМЯ</span>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#D4FF00" stroke-width="2">
+                      <circle cx="12" cy="12" r="10"/>
+                      <polyline points="12 6 12 12 16 14"/>
+                    </svg>
+                  </div>
+                  <div class="time-val-row">
+                    <strong class="time-giant-val">08:35</strong>
+                  </div>
+                  <span class="time-sub" data-i18n="stat_tempo">Темп: 1.2сек / 2.3сек</span>
+                </div>
+              </article>
+
+              <!-- Daily Goal Card -->
+              <article class="glass-card card-goal">
+                <div class="goal-header">
+                  <span class="stat-caption" data-i18n="goal_today">ЦЕЛЬ НА СЕГОДНЯ</span>
+                  <span class="goal-score"><strong>60</strong> / 100</span>
+                </div>
+                <div class="goal-progress-track">
+                  <div class="goal-progress-fill" style="width: 60%"></div>
+                </div>
+                <div class="goal-footer">
+                  <span data-i18n="goal_remaining">Осталось 40 повторений до рекорда дня</span>
+                  <span class="goal-percent">60%</span>
+                </div>
+              </article>
+
+              <!-- Coach Tip Dark Banner -->
+              <article class="glass-card card-dark-coach">
+                <div class="coach-icon-bubble">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                    <path d="M12 2a5 5 0 0 1 5 5c0 2-1 3.5-2.5 4.5-.8.5-1.5 1.5-1.5 2.5v1"/>
+                    <line x1="12" y1="19" x2="12.01" y2="19"/>
+                  </svg>
+                </div>
+                <div class="coach-copy">
+                  <strong data-i18n="coach_title">ПОДСКАЗКА ТРЕНЕРА:</strong>
+                  <p data-i18n="coach_text">Держите корпус прямым от головы до стоп, опускайтесь до угла 90° в локтях. Не роняйте таз на подъем.</p>
+                </div>
+              </article>
+            </div>
+          </div>
+
+          <!-- Compatibility stats container for main.js contract -->
+          <div class="splash-stats sr-only" role="list">
+            <div class="splash-stat" role="listitem"><strong>4</strong><span>MOVEMENTS</span></div>
+            <div class="splash-stat" role="listitem"><strong>3</strong><span>WORKOUTS</span></div>
+            <div class="splash-stat" role="listitem"><strong>0</strong><span>VIDEO UPLOADED</span></div>
+          </div>
+
+          <section id="analytics-section" class="product-section analytics-dashboard" aria-labelledby="analytics-title">
+            <div class="product-heading">
+              <span class="section-kicker" data-i18n="analytics_kicker">ДАННЫЕ / ПРОГРЕСС</span>
+              <h2 id="analytics-title" class="section-heading" data-i18n="analytics_title">АНАЛИТИКА ТРЕНИРОВОК</h2>
+              <p class="section-desc" data-i18n="analytics_subtitle">Следите за активностью, количеством повторений и историей тренировок.</p>
+            </div>
+            <div id="analytics-content"></div>
+          </section>
+        </section>
+
+        <!-- ================= CAMERA SCREEN: LIVE MOTION TRACKING ================= -->
+        <section id="camera-screen" class="screen camera-screen" aria-labelledby="camera-title" hidden>
+          <div class="camera-heading">
+            <p class="eyebrow"><span class="status-dot" aria-hidden="true"></span> <span data-i18n="cam_live">ТРЕКИНГ В РЕАЛЬНОМ ВРЕМЕНИ</span></p>
+            <h1 id="camera-title" data-i18n="cam_title">КАМЕРА ТРЕНИРОВКИ</h1>
+            <p class="camera-intro" data-i18n="cam_intro">Ваше тело — контроллер. Видеопоток обрабатывается локально и не покидает ваше устройство.</p>
+          </div>
+
+          <!-- Training Programs Selection View -->
+          <section id="programs-view" class="flow-view programs-view" aria-labelledby="programs-title" hidden>
+            <p class="eyebrow" data-i18n="prog_kicker">ПРОГРАММЫ ТРЕНИРОВОК</p>
+            <h2 id="programs-title" data-i18n="prog_title">ВЫБЕРИТЕ ТРЕНИРОВКУ</h2>
+            <p class="flow-intro" data-i18n="prog_intro">Выберите тренировку, чтобы просмотреть упражнения перед стартом.</p>
+            <div id="program-cards" class="program-cards"></div>
+          </section>
+
+          <!-- Workout Intro View -->
+          <section id="intro-view" class="flow-view intro-view" aria-labelledby="intro-title" hidden>
+            <p id="intro-number" class="eyebrow"></p>
+            <h2 id="intro-title"></h2>
+            <p id="intro-count" class="flow-kicker"></p>
+            <div id="intro-exercises" class="results-exercises"></div>
+            <p id="intro-duration" class="flow-intro"></p>
+            <button id="start-training-button" class="btn-primary-lime flow-button" type="button" data-i18n="btn_start_training">НАЧАТЬ ТРЕНИРОВКУ</button>
+            <button class="secondary-button return-programs-button" type="button" data-i18n="btn_back_programs">НАЗАД К ПРОГРАММАМ</button>
+          </section>
+
+          <!-- Workout Stage Heading -->
+          <div id="workout-heading" class="workout-heading" hidden>
+            <span id="workout-program-name" class="flow-kicker"></span>
+            <span id="workout-exercise-number" class="flow-kicker"></span>
+          </div>
+
+          <!-- Exercise Ready View -->
+          <section id="exercise-ready-view" class="flow-view exercise-ready-view" aria-labelledby="exercise-ready-title" hidden>
+            <p id="exercise-ready-step" class="eyebrow" data-i18n="ex_next_kicker">СЛЕДУЮЩЕЕ УПРАЖНЕНИЕ</p>
+            <h2 id="exercise-ready-title"></h2>
+            <p id="exercise-ready-reps" class="rest-completed"></p>
+            <p id="exercise-ready-position" class="flow-kicker"></p>
+            <p id="exercise-ready-help" class="flow-intro"></p>
+            <button id="start-exercise-button" class="btn-primary-lime flow-button" type="button" data-i18n="btn_start_exercise">НАЧАТЬ УПРАЖНЕНИЕ</button>
+            <button class="secondary-button return-programs-button" type="button" data-i18n="btn_back_programs">НАЗАД К ПРОГРАММАМ</button>
+          </section>
+
+          <!-- Rest View -->
+          <section id="rest-view" class="flow-view rest-view" aria-labelledby="rest-title" hidden>
+            <p class="eyebrow" data-i18n="rest_kicker">УПРАЖНЕНИЕ ВЫПОЛНЕНО</p>
+            <h2 id="rest-title" data-i18n="rest_title">ОТДЫХ</h2>
+            <p id="rest-completed" class="rest-completed"></p>
+            <p class="flow-kicker" data-i18n="rest_next_label">ДАЛЕЕ</p>
+            <p id="rest-next" class="rest-next"></p>
+            <strong id="rest-timer" class="rest-timer" aria-live="off">20</strong>
+            <button id="next-exercise-button" class="btn-primary-lime flow-button" type="button" data-i18n="btn_prep_next">ПОДГОТОВИТЬ СЛЕДУЮЩЕЕ <span aria-hidden="true">↗</span></button>
+            <button class="secondary-button return-programs-button" type="button" data-i18n="btn_return_programs">← ВЕРНУТЬСЯ К ПРОГРАММАМ</button>
+          </section>
+
+          <!-- Results Summary View -->
+          <section id="results-view" class="flow-view results-view" aria-labelledby="results-title" hidden>
+            <p class="eyebrow" data-i18n="results_kicker">СЕССИЯ ЗАВЕРШЕНА</p>
+            <h2 id="results-title" data-i18n="results_title">ИТОГИ ТРЕНИРОВКИ</h2>
+            <p id="results-program" class="results-program"></p>
+            <div id="results-exercises" class="results-exercises"></div>
+            <div class="results-stats">
+              <p><span data-i18n="res_count">ВЫПОЛНЕНО УПРАЖНЕНИЙ</span> <strong id="results-count"></strong></p>
+              <p><span data-i18n="res_dur">ДЛИТЕЛЬНОСТЬ</span> <strong id="results-duration"></strong></p>
+              <p><span data-i18n="res_status">СТАТУС</span> <strong data-i18n="res_done">Завершено</strong></p>
+            </div>
+            <button id="repeat-workout-button" class="btn-primary-lime flow-button" type="button" data-i18n="btn_repeat">ПОВТОРИТЬ ТРЕНИРОВКУ</button>
+            <button class="secondary-button return-programs-button" type="button" data-i18n="btn_back_programs">НАЗАД К ПРОГРАММАМ</button>
+          </section>
+
+          <!-- Camera Live Video Frame -->
+          <div class="camera-frame" aria-label="Вид с веб-камеры со скелетом позы">
+            <video id="camera-video" autoplay muted playsinline aria-label="Видеопоток веб-камеры"></video>
+            <canvas id="pose-canvas" aria-hidden="true"></canvas>
+            <div id="camera-empty" class="camera-empty" aria-hidden="true">
+              <div class="camera-symbol">◎</div>
+              <p data-i18n="cam_wait_title">ОЖИДАНИЕ КАМЕРЫ</p>
+              <span class="empty-sub" data-i18n="cam_wait_sub">Встаньте в поле зрения объектива</span>
+            </div>
+            <div class="frame-corner top-left"></div>
+            <div class="frame-corner top-right"></div>
+            <div class="frame-corner bottom-left"></div>
+            <div class="frame-corner bottom-right"></div>
+            <span id="fps-indicator" class="fps-indicator" aria-label="Частота кадров">FPS --</span>
+          </div>
+
+          <!-- Camera Status Row -->
+          <div class="camera-status-row">
+            <div>
+              <p id="camera-status" class="camera-status" role="status" aria-live="polite">Подготовка камеры...</p>
+              <p id="camera-help" class="camera-help" hidden></p>
+            </div>
+            <p class="camera-privacy" data-i18n="privacy_note">◈ Видео не покидает ваше устройство.</p>
+          </div>
+
+          <button id="back-button" class="secondary-button" type="button" data-i18n="btn_back_menu">← ВЕРНУТЬСЯ В МЕНЮ</button>
+        </section>
+
+        <!-- ================= FOOTER ================= -->
+        <footer class="footer">
+          <div class="footer-left">
+            <span>© 2026 MOTION TRACKER BIOMETRICS INC.</span>
+            <span class="footer-sep">/</span>
+            <span data-i18n="footer_tag">ВАШЕ ТЕЛО — КОНТРОЛЛЕР</span>
+          </div>
+          <div class="footer-links">
+            <a href="#how-it-works" data-i18n="foot_guide">Инструкция</a>
+            <a href="#hero" data-i18n="foot_sensors">Сенсоры</a>
+            <a href="#hero" data-i18n="foot_privacy">Конфиденциальность</a>
+          </div>
+          <span>G2.1 / MOTION</span>
+        </footer>
+      </main>
+    </div>
+
+    <!-- ================= AUTHENTICATION MODAL (Вход / Регистрация) ================= -->
+    <div id="auth-modal" class="auth-modal-root" aria-hidden="true" hidden>
+      <div class="auth-modal-backdrop" id="auth-backdrop"></div>
+      <div class="auth-modal-dialog glass-card" role="dialog" aria-modal="true" aria-labelledby="auth-modal-title">
+        <button class="auth-modal-close" id="auth-modal-close" type="button" aria-label="Закрыть">✕</button>
+
+        <div class="auth-tabs" role="tablist">
+          <button class="auth-tab is-active" id="tab-auth-login" type="button" role="tab" aria-selected="true" data-i18n="tab_login">Вход</button>
+          <button class="auth-tab" id="tab-auth-register" type="button" role="tab" aria-selected="false" data-i18n="tab_register">Регистрация</button>
+        </div>
+
+        <h2 id="auth-modal-title" class="sr-only">Авторизация Motion Tracker</h2>
+
+        <!-- Alert Banner -->
+        <div id="auth-alert" class="auth-alert" hidden></div>
+
+        <!-- LOGIN FORM -->
+        <form id="form-login" class="auth-form" autocomplete="on">
+          <div class="form-group">
+            <label for="login-email" data-i18n="lbl_email">Email адрес</label>
+            <div class="input-wrap">
+              <input type="email" id="login-email" placeholder="alex@motion.fit" required autocomplete="email" />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <div class="form-label-row">
+              <label for="login-password" data-i18n="lbl_password">Пароль</label>
+              <a href="#hero" class="forgot-link" id="link-forgot-pass" data-i18n="lbl_forgot">Забыли пароль?</a>
+            </div>
+            <div class="input-wrap">
+              <input type="password" id="login-password" placeholder="••••••••" required autocomplete="current-password" />
+              <button type="button" class="btn-toggle-pwd" data-target="login-password" aria-label="Показать пароль">👁</button>
+            </div>
+          </div>
+
+          <button type="submit" class="btn-primary-lime btn-auth-submit" id="btn-submit-login">
+            <span data-i18n="btn_submit_login">ВОЙТИ В АККАУНТ</span>
           </button>
-          <p class="privacy-note"><span aria-hidden="true">◈</span> Video stays on your device.</p>
-        </div>
 
-        <div class="splash-art" aria-hidden="true">
-          <div class="art-grid"></div>
-          <div class="orbit orbit-outer"></div>
-          <div class="orbit orbit-middle"></div>
-          <div class="orbit orbit-inner"></div>
-          <div class="art-core"><span>MQ</span></div>
-          <span class="art-node node-one"></span>
-          <span class="art-node node-two"></span>
-          <span class="art-node node-three"></span>
-          <span class="art-caption caption-top">BODY INPUT <span>●</span> READY</span>
-          <span class="art-caption caption-bottom">PLAY IN MOTION / 001</span>
-        </div>
-      </section>
+          <div class="auth-divider">
+            <span data-i18n="auth_or">или</span>
+          </div>
 
-      <section id="camera-screen" class="screen camera-screen" aria-labelledby="camera-title" hidden>
-        <div class="camera-heading">
-          <p class="eyebrow"><span class="status-dot" aria-hidden="true"></span> LIVE TRACKING</p>
-          <h1 id="camera-title">CAMERA</h1>
-          <p class="camera-intro">Your body is the controller.</p>
-        </div>
-        <section id="programs-view" class="flow-view programs-view" aria-labelledby="programs-title" hidden>
-          <p class="eyebrow">TRAINING PROGRAMS</p>
-          <h2 id="programs-title">CHOOSE YOUR WORKOUT</h2>
-          <p class="flow-intro">Choose a workout to review its exercises before starting.</p>
-          <div id="program-cards" class="program-cards"></div>
-        </section>
-        <section id="intro-view" class="flow-view intro-view" aria-labelledby="intro-title" hidden>
-          <p id="intro-number" class="eyebrow"></p>
-          <h2 id="intro-title"></h2>
-          <p id="intro-count" class="flow-kicker"></p>
-          <div id="intro-exercises" class="results-exercises"></div>
-          <p id="intro-duration" class="flow-intro"></p>
-          <button id="start-training-button" class="primary-button flow-button" type="button">START TRAINING</button>
-          <button class="secondary-button return-programs-button" type="button">BACK TO WORKOUTS</button>
-        </section>
-        <div id="workout-heading" class="workout-heading" hidden>
-          <span id="workout-program-name" class="flow-kicker"></span>
-          <span id="workout-exercise-number" class="flow-kicker"></span>
-        </div>
-        <section id="exercise-ready-view" class="flow-view exercise-ready-view" aria-labelledby="exercise-ready-title" hidden>
-          <p id="exercise-ready-step" class="eyebrow">NEXT EXERCISE</p>
-          <h2 id="exercise-ready-title"></h2>
-          <p id="exercise-ready-reps" class="rest-completed"></p>
-          <p id="exercise-ready-position" class="flow-kicker"></p>
-          <p id="exercise-ready-help" class="flow-intro"></p>
-          <button id="start-exercise-button" class="primary-button flow-button" type="button">START EXERCISE</button>
-          <button class="secondary-button return-programs-button" type="button">BACK TO WORKOUTS</button>
-        </section>
-        <section id="rest-view" class="flow-view rest-view" aria-labelledby="rest-title" hidden>
-          <p class="eyebrow">EXERCISE COMPLETE</p>
-          <h2 id="rest-title">REST</h2>
-          <p id="rest-completed" class="rest-completed"></p>
-          <p class="flow-kicker">NEXT</p>
-          <p id="rest-next" class="rest-next"></p>
-          <strong id="rest-timer" class="rest-timer" aria-live="off">20</strong>
-          <button id="next-exercise-button" class="primary-button flow-button" type="button">PREPARE NEXT EXERCISE <span aria-hidden="true">↗</span></button>
-          <button class="secondary-button return-programs-button" type="button">← RETURN TO PROGRAMS</button>
-        </section>
-        <section id="results-view" class="flow-view results-view" aria-labelledby="results-title" hidden>
-          <p class="eyebrow">SESSION COMPLETE</p>
-          <h2 id="results-title">WORKOUT SUMMARY</h2>
-          <p id="results-program" class="results-program"></p>
-          <div id="results-exercises" class="results-exercises"></div>
-          <div class="results-stats">
-            <p>EXERCISES COMPLETED <strong id="results-count"></strong></p>
-            <p>DURATION <strong id="results-duration"></strong></p>
-            <p>STATUS <strong>Completed</strong></p>
-          </div>
-          <button id="repeat-workout-button" class="primary-button flow-button" type="button">REPEAT WORKOUT</button>
-          <button class="secondary-button return-programs-button" type="button">BACK TO WORKOUTS</button>
-        </section>
-        <div class="camera-frame" aria-label="Live mirrored camera view with pose skeleton">
-          <video id="camera-video" autoplay muted playsinline aria-label="Mirrored webcam video"></video>
-          <canvas id="pose-canvas" aria-hidden="true"></canvas>
-          <div id="camera-empty" class="camera-empty" aria-hidden="true">
-            <div class="camera-symbol">◎</div>
-            <p>CAMERA PREVIEW</p>
-          </div>
-          <div class="frame-corner top-left"></div>
-          <div class="frame-corner top-right"></div>
-          <div class="frame-corner bottom-left"></div>
-          <div class="frame-corner bottom-right"></div>
-          <span id="fps-indicator" class="fps-indicator" aria-label="Pose tracking frames per second">FPS --</span>
-        </div>
-        <div class="camera-status-row">
-          <div>
-            <p id="camera-status" class="camera-status" role="status" aria-live="polite">Preparing camera...</p>
-            <p id="camera-help" class="camera-help" hidden></p>
-          </div>
-          <p class="camera-privacy">◈ Video stays on your device.</p>
-        </div>
-        <button id="back-button" class="secondary-button" type="button">← BACK TO HOME</button>
-      </section>
+          <button type="button" class="btn-demo-quick" id="btn-login-demo">
+            <span class="icon-bolt">⚡</span>
+            <span data-i18n="btn_demo_athlete">Войти как демо-атлет (в 1 клик)</span>
+          </button>
+        </form>
 
-      <footer class="footer">
-        <span>YOUR MOVEMENT. YOUR GAME.</span>
-        <span>G2.1 / SPLASH</span>
-      </footer>
-    </main>
+        <!-- REGISTER FORM -->
+        <form id="form-register" class="auth-form" autocomplete="on" hidden>
+          <div class="form-group">
+            <label for="reg-name" data-i18n="lbl_name">Имя и фамилия</label>
+            <div class="input-wrap">
+              <input type="text" id="reg-name" placeholder="Александр Волков" required autocomplete="name" />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="reg-email" data-i18n="lbl_email">Email адрес</label>
+            <div class="input-wrap">
+              <input type="email" id="reg-email" placeholder="name@example.com" required autocomplete="email" />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="reg-password" data-i18n="lbl_password">Придумайте пароль</label>
+            <div class="input-wrap">
+              <input type="password" id="reg-password" placeholder="Минимум 6 символов" required minlength="6" autocomplete="new-password" />
+              <button type="button" class="btn-toggle-pwd" data-target="reg-password" aria-label="Показать пароль">👁</button>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="reg-confirm-password" data-i18n="lbl_confirm_password">Подтвердите пароль</label>
+            <div class="input-wrap">
+              <input type="password" id="reg-confirm-password" placeholder="Повторите пароль" required minlength="6" autocomplete="new-password" />
+            </div>
+          </div>
+
+          <button type="submit" class="btn-primary-lime btn-auth-submit" id="btn-submit-register">
+            <span data-i18n="btn_submit_register">СОЗДАТЬ АККАУНТ</span>
+          </button>
+
+          <p class="auth-terms-note" data-i18n="terms_note">
+            Регистрируясь, вы соглашаетесь с правилами сервиса и безопасной локальной обработкой данных.
+          </p>
+        </form>
+      </div>
+    </div>
   </body>
 </html>

@@ -12,7 +12,8 @@ Camera / MediaPipe
 
 Workout result JSON
   → src/api.js
-  → future backend
+  → Express HTTP API
+  → PostgreSQL / Prisma
 ```
 
 `src/main.js` currently connects these layers. Camera frames stay in the browser. Only a completed, JSON-serializable workout result crosses the API boundary.
@@ -42,14 +43,14 @@ Events for rendering and interaction are `app:screen-change`, `program:selected`
 
 Replace function bodies inside `src/api.js`. Keep the exported async functions and `{ ok, data }` success shape:
 
-| Function | Expected future operation |
+| Function | HTTP operation |
 | --- | --- |
 | `getCurrentUser()` | GET current authenticated user/session |
 | `saveWorkoutResult(result)` | POST one completed workout |
 | `getWorkoutHistory()` | GET workout history for the current user |
-| `saveUserProgress(progress)` | PUT or POST progress summary |
+| `saveUserProgress(progress)` | GET server-derived progress; client totals are ignored |
 
-The current implementation has no network requests. It stores workout history and progress in memory for the current page session and returns `null` for the current user. A future API error must reject or return `{ ok: false, error }` without preventing the Results screen from rendering. Do not import `api.js` from pose or exercise modules.
+The adapter now uses credentialed HTTP requests to the separate backend. Existing exports and success shapes are preserved, including registerUser, loginUser, loginDemoUser and logoutUser used by the current UI. HTTP error objects are translated into string errors for compatibility. Anonymous current-user lookup returns null. saveUserProgress reads server-derived totals; there is no client-controlled progress write. getUserProgress and subscribeApi support UI progress/status updates. Failed saves leave Results visible. Do not import api.js from pose or exercise modules. See [backend/README.md](./backend/README.md) for setup and API documentation.
 
 ### Workout result JSON
 

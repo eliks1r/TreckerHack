@@ -7,9 +7,9 @@ The backend developer owns persistence behind `src/api.js` and may add a `backen
 | `getCurrentUser()` | Current user/session lookup |
 | `saveWorkoutResult(result)` | Save one completed workout |
 | `getWorkoutHistory()` | Read past workouts |
-| `saveUserProgress(progress)` | Save a progress summary |
+| `saveUserProgress(progress)` | Read server-derived progress through compatibility function |
 
-The current adapter is in memory, returns `{ ok: true, data }`, and makes no network requests. A future failure may reject or return `{ ok: false, error }`; Results must remain visible even when saving fails. Authentication and database choices belong behind this boundary. Keep secrets in environment variables; `.env.example` contains placeholders only.
+The adapter makes HTTP requests to the Express/PostgreSQL backend and preserves `{ ok: true, data }`. Failures return string errors compatible with existing UI; Results remains visible. Registration/login/logout use persisted sessions and HttpOnly cookies. saveUserProgress reads server-derived totals without trusting client summaries. See [backend/README.md](./backend/README.md) for installation, schema, API and tests. Secrets belong in ignored backend/.env; examples contain placeholders only.
 
 ## Workout result contract
 
