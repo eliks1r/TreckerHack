@@ -12,6 +12,14 @@ From the repository root:
 python -m http.server 8000
 ```
 
+On Windows without Python, use the bundled PowerShell server instead:
+
+```sh
+powershell -NoProfile -ExecutionPolicy Bypass -File serve.ps1
+```
+
+It serves `http://localhost:8123/`.
+
 Open `http://localhost:8000/` in a browser and allow camera access. Use localhost or HTTPS; opening `index.html` directly may block camera access or ES modules. MediaPipe Tasks Vision and the Pose Landmarker Lite model are served from `vendor/mediapipe/`; no build step or CDN is needed.
 
 ## Workouts
